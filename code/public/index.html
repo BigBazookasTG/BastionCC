@@ -5,51 +5,225 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BastionCC Control Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script> tailwind.config = { darkMode: 'class', theme: { extend: { colors: { darkBg: '#0f172a', darkNav: '#020617', accent: '#f97316' } } } } </script>
+    <script>
+
+    // Global PIN Modal Handlers
+    // Global PIN Modal Handlers (Targeting original pin-reset-modal)
+    window.openPinReset = function() {
+        const modal = document.getElementById('pin-reset-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+            const inp = modal.querySelector('input');
+            if (inp) { inp.value = ''; inp.focus(); }
+        }
+    };
+
+    window.closePinReset = function() {
+        const modal = document.getElementById('pin-reset-modal');
+        if (modal) modal.classList.add('hidden');
+    };
+
+    window.submitPinReset = function() {
+        const inp = document.getElementById('pinResetInput');
+        const msg = document.getElementById('pinResetMsg');
+        const newPin = inp ? inp.value.trim() : '';
+        if (!/^[0-9]{4,8}$/.test(newPin)) {
+            if (msg) { 
+                msg.className = 'text-xs text-center text-rose-400';
+                msg.innerText = 'PIN must be between 4 and 8 digits.'; 
+                msg.classList.remove('hidden'); 
+            }
+            return;
+        }
+        if (typeof socket !== 'undefined' && socket) {
+            socket.emit('set-pin', { pin: newPin });
+        }
+        sessionStorage.setItem('bastion_pin', newPin);
+        if (msg) { 
+            msg.className = 'text-xs text-center text-emerald-400';
+            msg.innerText = 'PIN updated successfully!'; 
+            msg.classList.remove('hidden'); 
+        }
+        setTimeout(() => { window.closePinReset(); }, 800);
+    };
+
+ tailwind.config = { darkMode: 'class', theme: { extend: { colors: { darkBg: '#0f172a', darkNav: '#020617', accent: '#f97316' } } } } </script>
     <link rel="stylesheet" href="/node_modules/xterm/css/xterm.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsvectormap/dist/css/jsvectormap.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/jsvectormap"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsvectormap/dist/maps/world.js"></script>
     <style>
         :root { --accent-color: #f97316; } .text-accent { color: var(--accent-color); } .bg-accent { background-color: var(--accent-color); } .border-accent { border-color: var(--accent-color); }
         .xterm, .xterm-viewport, .xterm-screen { width: 100% !important; height: 100% !important; }
         .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; transition: background-color 0.2s ease; }
+        ::-webkit-scrollbar-thumb:hover { background: #f97316; }
+        * { scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+        *:hover { scrollbar-color: #f97316 transparent; }
         @keyframes expandCenter { 0% { transform: scaleX(0); opacity: 0; } 100% { transform: scaleX(1); opacity: 1; } }
         .anim-connected { animation: expandCenter 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; display: inline-block !important; }
+        @keyframes slideInDown { 0% { transform: translateY(-100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+        .toast-animate { animation: slideInDown 0.25s ease-out forwards; }
+        .jvm-tooltip { background: #020617 !important; border: 1px solid #f97316 !important; border-radius: 8px !important; color: #f8fafc !important; font-family: monospace !important; padding: 10px 14px !important; box-shadow: 0 10px 25px rgba(0,0,0,0.7) !important; pointer-events: none !important; z-index: 9999 !important; }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 dark:bg-darkBg dark:text-slate-100 h-screen flex overflow-hidden">
 
-    <!-- CHANGELOG DRAWER -->
-    <div id="changelog-backdrop" class="fixed inset-0 z-[65] bg-slate-950/50 backdrop-blur-sm hidden transition-opacity" onclick="closeChangelog()"></div>
-    <div id="changelog-drawer" class="fixed inset-y-0 right-0 z-[70] w-full max-w-md bg-white dark:bg-darkNav shadow-2xl border-l border-slate-200 dark:border-slate-800 transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
-        <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
-            <h2 class="text-xl font-bold text-accent">Version Changelog</h2>
-            <button onclick="closeChangelog()" class="text-slate-500 hover:text-rose-500 transition-colors font-bold p-1 rounded focus:outline-none"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-        </div>
-        <div class="flex-1 overflow-y-auto p-6 space-y-8 text-sm">
-            <div class="border-l-4 border-orange-500 pl-4">
-                <h3 class="text-lg font-bold text-slate-800 dark:text-white">v1.5.1 <span class="text-xs font-bold text-rose-500 border border-rose-500/30 bg-rose-500/10 rounded px-2 ml-2">HOTFIX</span> <span class="text-sm text-slate-500 font-normal border border-slate-400 rounded px-2 ml-2">Current</span></h3>
-                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Multi-Factor Authentication & Full UI Restoration</p>
-                <ul class="list-disc list-inside text-sm text-slate-700 dark:text-slate-300 mt-2 space-y-1">
-                    <li><strong>Authentication Profiles:</strong> Added toggle to switch between strictly enforced Public Key auth and native SSH Password auth for legacy endpoints.</li>
-                    <li><strong>Interactive 2FA (TOTP):</strong> Integrated deep `keyboard-interactive` socket forwarding to securely intercept and proxy Google Authenticator codes dynamically during the SSH handshake.</li>
-                    <li><strong>Security Grid & Docker Restoration:</strong> Fully restored all 4 security audit panels (Nmap, Web/SSL Matrix, Intrusion Prevention, Firewall) and Docker container management grids.</li>
-                </ul>
+    <!-- FLOATING TOAST NOTIFICATION CONTAINER -->
+    <div id="toast-container" class="fixed top-5 right-5 z-[110] flex flex-col space-y-2 pointer-events-none"></div>
+
+    <!-- DEMO MODE FLOATING BADGE -->
+    <div id="demo-mode-indicator" class="hidden fixed bottom-4 right-6 z-[105] pointer-events-none bg-accent/90 text-slate-950 font-mono font-bold text-xs px-3.5 py-1.5 rounded-full shadow-2xl flex items-center space-x-2 border border-accent/40 animate-pulse">
+        <span class="w-2 h-2 rounded-full bg-slate-950"></span>
+        <span>DEMO MODE ACTIVE (PII OBFUSCATED)</span>
+    </div>
+
+    <!-- THREATS BY COUNTRY VISUAL MAP MODAL -->
+    <div id="threat-map-modal" class="fixed inset-0 z-[87] flex items-center justify-center bg-slate-950/85 backdrop-blur-md hidden p-4">
+        <div class="bg-white dark:bg-darkNav p-6 rounded-xl w-[85vw] max-w-6xl h-[85vh] shadow-2xl border border-accent/50 relative flex flex-col overflow-hidden">
+            <div class="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-900 dark:text-white">Threats By Country — Historical Geo-Telemetry</h2>
+                    <p class="text-xs text-slate-500">Persistent log of manual ban actions categorized by ISO registry origin</p>
+                </div>
+                <button onclick="closeThreatMapModal()" class="text-slate-400 hover:text-rose-500 font-bold p-1 rounded">✕</button>
             </div>
-            <div class="border-l-4 border-rose-500 pl-4">
-                <h3 class="font-bold text-lg text-slate-900 dark:text-white mb-2">v1.4.1 <span class="text-xs font-bold text-rose-500 border border-rose-500/30 bg-rose-500/10 rounded px-2 ml-1">SECURITY</span></h3>
-                <p class="text-slate-600 dark:text-slate-400">Live Status Pulse & Audit Polish: Dynamic tracker for deep Nmap scanning.</p>
+
+            <div class="flex-1 flex flex-col md:flex-row gap-4 p-2 mt-2 min-h-0">
+                <div class="flex-1 bg-slate-100 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800 relative overflow-hidden flex items-center justify-center p-2">
+                    <div id="jvm-map-container" class="w-full h-full"></div>
+                </div>
+                <div class="w-full md:w-72 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col shrink-0 overflow-y-auto">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-accent mb-3">Threat Density Tiers</h3>
+                    <div class="space-y-2 mb-4 text-xs font-mono">
+                        <div class="flex items-center space-x-2"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span> <span>1 – 15 Threats (Low)</span></div>
+                        <div class="flex items-center space-x-2"><span class="w-3 h-3 rounded-full bg-orange-500 inline-block"></span> <span>16 – 50 Threats (Moderate)</span></div>
+                        <div class="flex items-center space-x-2"><span class="w-3 h-3 rounded-full bg-purple-500 inline-block"></span> <span>51+ Threats (High Density)</span></div>
+                    </div>
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-accent mb-2">Top Origin Nations</h3>
+                    <div id="top-threat-countries-list" class="space-y-2 flex-1"></div>
+                    <div class="pt-3 border-t border-slate-200 dark:border-slate-800 text-[10px] text-slate-400">
+                        Zero external API calls. Sourced from local ban audit ledger.
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end shrink-0">
+                <button onclick="closeThreatMapModal()" class="px-5 py-2 rounded-[10px] text-xs font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:opacity-90 transition">Close Telemetry</button>
             </div>
         </div>
     </div>
 
-    <!-- ROOTKIT INSTALL MODAL -->
-    <div id="rootkit-install-modal" class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm hidden p-4">
-        <div class="bg-white dark:bg-darkNav p-8 rounded-xl w-[500px] shadow-2xl border border-rose-500/50 relative">
-            <h2 class="text-xl font-bold mb-4 text-rose-500 flex items-center"><svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Rootkit Scanners Missing</h2>
-            <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Neither <code>rkhunter</code> nor <code>chkrootkit</code> were found on the target node.</p>
-            <p class="text-sm text-slate-600 dark:text-slate-300 mb-6">Would you like BastionCC to attempt to install them automatically via <code>apt-get</code> and launch the scan?</p>
-            <div class="flex flex-col space-y-3">
-                <button onclick="confirmRootkitInstall()" class="w-full py-2 rounded font-bold bg-rose-500 text-white hover:opacity-90 transition shadow-lg">Yes, Auto-Install & Scan</button>
-                <button onclick="document.getElementById('rootkit-install-modal').classList.add('hidden')" class="w-full py-2 rounded font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition mt-2">Cancel</button>
+    <!-- ABUSEIPDB CONFIGURATION MODAL -->
+    <div id="abuseipdb-modal" class="fixed inset-0 z-[86] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm hidden p-4">
+        <div class="bg-white dark:bg-darkNav p-7 rounded-xl w-full max-w-xl shadow-2xl border border-accent/50 relative flex flex-col max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div class="flex items-center space-x-2.5">
+                    <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                    <h2 class="text-lg font-bold text-slate-900 dark:text-white">AbuseIPDB Threat Intelligence Key</h2>
+                </div>
+                <button onclick="closeAbuseIpDbModal()" class="text-slate-400 hover:text-rose-500 font-bold p-1 rounded">✕</button>
+            </div>
+
+            <div class="space-y-4 text-xs text-slate-600 dark:text-slate-300">
+                <div class="bg-slate-100 dark:bg-slate-900/60 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 leading-relaxed">
+                    This feature is only required for WHOIS threat severity modeling. BastionCC includes an autonomous <strong>Local Heuristic model</strong> that operates 100% locally with zero 3rd-party dependencies. If you already have a free <strong>AbuseIPDB API key</strong>, you can enter it below to enable global crowd-sourced threat intelligence.
+                </div>
+
+                <div class="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg">
+                    <table class="w-full text-left text-[11px]">
+                        <thead class="bg-slate-200 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-bold uppercase">
+                            <tr>
+                                <th class="p-2.5">Feature</th>
+                                <th class="p-2.5 text-accent">AbuseIPDB API</th>
+                                <th class="p-2.5 text-emerald-500">Local Heuristics</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                            <tr><td class="p-2 font-semibold">Setup</td><td class="p-2">API key required</td><td class="p-2 text-emerald-400 font-bold">Zero-Key Plug & Play</td></tr>
+                            <tr><td class="p-2 font-semibold">First-Hit Threat Detection</td><td class="p-2 text-emerald-400 font-bold">Instant global recognition</td><td class="p-2">Requires local hit density</td></tr>
+                            <tr><td class="p-2 font-semibold">Daily Query Capacity</td><td class="p-2">1,000 queries / day (Free)</td><td class="p-2 text-emerald-400 font-bold">Unlimited</td></tr>
+                            <tr><td class="p-2 font-semibold">Attribution Detail</td><td class="p-2">Specific attack categories</td><td class="p-2">Hit density + Datacenter ASN</td></tr>
+                            <tr><td class="p-2 font-semibold">Privacy / Exposure</td><td class="p-2">IP queried via AbuseIPDB</td><td class="p-2 text-emerald-400 font-bold">100% Local / In-Memory</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flex items-center justify-between pt-1">
+                    <span class="font-semibold text-slate-500">Current Threat Engine:</span>
+                    <span id="abuseipdb-status-pill" class="px-2.5 py-1 rounded-full font-bold text-[10px] tracking-wide border bg-slate-200 dark:bg-slate-800 text-slate-400 border-slate-300 dark:border-slate-700">Checking status...</span>
+                </div>
+
+                <div class="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <label class="block font-bold text-slate-700 dark:text-slate-300">Enter / Update AbuseIPDB Key</label>
+                    <input type="password" id="abuseipdb-key-input" placeholder="Paste your 80-character API key" class="w-full px-3 py-2 text-xs font-mono rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:border-accent">
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center mt-6 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button id="btn-delete-abuse-key" onclick="deleteAbuseIpDbKey()" class="px-3 py-2 rounded-[10px] text-xs font-bold bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white border border-rose-500/30 transition hidden">Delete Key</button>
+                <div class="flex space-x-2 ml-auto">
+                    <button onclick="closeAbuseIpDbModal()" class="px-4 py-2 rounded-[10px] text-xs font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:opacity-90 transition">Cancel</button>
+                    <button onclick="saveAbuseIpDbKey()" class="px-4 py-2 rounded-[10px] text-xs font-bold bg-accent text-white hover:opacity-90 transition shadow-md">Save Key</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- THREAT DEFENSE CONFIRMATION MODAL -->
+    <div id="defense-modal" class="fixed inset-0 z-[88] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm hidden p-4">
+        <div class="bg-white dark:bg-darkNav p-7 rounded-xl w-full max-w-xl shadow-2xl border border-rose-500/50 relative flex flex-col">
+            <div class="flex items-center space-x-3 mb-4 pb-3 border-b border-slate-200 dark:border-slate-800">
+                <span class="w-10 h-10 rounded-lg bg-rose-500/10 text-rose-500 border border-rose-500/30 flex items-center justify-center text-xl font-bold">🛡️</span>
+                <div>
+                    <h3 class="text-lg font-bold text-slate-900 dark:text-white">Confirm Threat Defense</h3>
+                    <p class="text-xs text-slate-500">Autonomous multi-tier enforcement cascade</p>
+                </div>
+            </div>
+            <div class="space-y-4 mb-6 text-sm text-slate-600 dark:text-slate-300">
+                <div class="p-4 bg-slate-100 dark:bg-slate-900/70 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2 font-mono">
+                    <div class="flex items-center justify-between"><span class="text-slate-400">Target:</span> <span id="defense-target-ip" class="text-rose-500 font-bold text-base"></span></div>
+                    <div class="flex items-center justify-between"><span class="text-slate-400">Mode:</span> <span id="defense-target-mode" class="font-semibold text-slate-800 dark:text-slate-200"></span></div>
+                    <div id="defense-whois-preview" class="text-xs text-slate-500 pt-2 border-t border-slate-200 dark:border-slate-800"></div>
+                </div>
+                <div class="text-xs text-slate-500 bg-amber-500/10 dark:bg-amber-500/5 p-3 rounded border border-amber-500/20 flex items-start space-x-2.5">
+                    <span class="text-amber-500 font-bold text-base leading-none">⚙️</span>
+                    <span><strong>Cascade Strategy:</strong> BastionCC initiates ban enforcement via <strong>CrowdSec</strong>, then <strong>Fail2ban</strong>, falling back to discovered native firewall rules (<strong>UFW / Firewalld / Nftables / Iptables</strong>).</span>
+                </div>
+            </div>
+            <div class="flex space-x-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <button onclick="closeDefenseModal()" class="w-1/3 py-2.5 rounded-[10px] text-sm font-bold bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition">Cancel</button>
+                <button id="btn-confirm-defense" onclick="submitDefenseAction()" class="w-2/3 py-2.5 rounded-[10px] text-sm font-bold bg-rose-600 text-white hover:bg-rose-700 transition shadow-lg flex items-center justify-center space-x-2">
+                    <span>Confirm Block</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- DYNAMIC TWO-COLUMN CHANGELOG DRAWER -->
+    <div id="changelog-backdrop" class="fixed inset-0 z-[65] bg-slate-950/50 backdrop-blur-sm hidden transition-opacity" onclick="closeChangelog()"></div>
+    <div id="changelog-drawer" class="fixed inset-y-0 right-0 z-[70] w-full max-w-xl bg-white dark:bg-darkNav shadow-2xl border-l border-slate-200 dark:border-slate-800 transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
+        <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
+            <h2 class="text-xl font-bold text-accent">Version Changelog</h2>
+            <button onclick="closeChangelog()" class="text-slate-500 hover:text-rose-500 transition-colors font-bold p-1 rounded focus:outline-none"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+        </div>
+        <div id="changelog-items-container" class="flex-1 overflow-y-auto p-6 space-y-8 text-sm">
+            <div class="text-slate-400 text-xs font-mono text-center py-6">Loading release history...</div>
+        </div>
+    </div>
+
+    <!-- WHOIS MODAL -->
+    <div id="whois-modal" class="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm hidden p-4">
+        <div class="bg-white dark:bg-darkNav p-7 rounded-xl w-full max-w-xl shadow-2xl border border-accent/50 relative flex flex-col max-h-[85vh]">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <h2 class="text-lg font-bold text-accent flex items-center" id="whois-title">🌐 IP Intelligence & WHOIS</h2>
+                <button onclick="closeWhoisModal()" class="text-slate-400 hover:text-rose-500 font-bold p-1 rounded">✕</button>
+            </div>
+            <div id="whois-content" class="overflow-y-auto space-y-3 font-mono text-sm text-slate-700 dark:text-slate-300"></div>
+            <div class="mt-5 pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+                <button onclick="closeWhoisModal()" class="px-5 py-2 rounded-[10px] text-sm font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:opacity-90 transition">Close</button>
             </div>
         </div>
     </div>
@@ -58,17 +232,20 @@
     <div id="deep-scan-modal" class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm hidden p-4">
         <div class="bg-white dark:bg-darkNav p-8 rounded-xl w-[500px] shadow-2xl border border-accent/50 relative">
             <h2 class="text-xl font-bold mb-4 text-accent">Automated Deep Scan</h2>
-            <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">This will sequentially execute Full Nmap (-A), UFW, Fail2ban (with bans), CrowdSec (with decisions), and Rootkit Scanners against the active server, compiling a standalone HTML report.</p>
+            <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">This will sequentially execute Full Nmap (-A), Host Firewall, Fail2ban (with bans), CrowdSec (with decisions), and compile your complete Historical Banned IPs audit into a standalone HTML report.</p>
             <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Nmap Scan Origin (Hub-Spoke)</p>
-            <select id="ds-nmap-origin" class="w-full px-3 py-2 rounded bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-sm mb-4"><option value="local">Local Host</option></select>
+            <select id="ds-nmap-origin" class="w-full px-3 py-2 rounded-[10px] bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-sm mb-4"><option value="local">Local Host</option></select>
             <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Web & SSL Targets (Optional)</p>
             <div class="space-y-2 mb-6" id="ds-domains">
-                <input type="text" placeholder="domain1.com" class="w-full px-3 py-2 rounded bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-sm font-mono">
-                <input type="text" placeholder="domain2.com" class="w-full px-3 py-2 rounded bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-sm font-mono">
-            </div>
+                    <input type="text" placeholder="domain1.com" class="w-full px-3 py-2 rounded-[10px] bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-sm font-mono">
+                    <input type="text" placeholder="domain2.com (optional)" class="w-full px-3 py-2 rounded-[10px] bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-sm font-mono">
+                    <input type="text" placeholder="domain3.com (optional)" class="w-full px-3 py-2 rounded-[10px] bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-sm font-mono">
+                    <input type="text" placeholder="domain4.com (optional)" class="w-full px-3 py-2 rounded-[10px] bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-sm font-mono">
+                    <input type="text" placeholder="domain5.com (optional)" class="w-full px-3 py-2 rounded-[10px] bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-sm font-mono">
+                </div>
             <div class="flex space-x-2">
-                <button onclick="document.getElementById('deep-scan-modal').classList.add('hidden')" class="w-1/3 py-2 rounded font-bold bg-slate-200 dark:bg-slate-800 hover:opacity-90 transition text-slate-700 dark:text-slate-200">Cancel</button>
-                <button onclick="executeDeepScan()" class="w-2/3 py-2 rounded font-bold bg-accent text-white hover:opacity-90 transition">Start Batch Audit</button>
+                <button onclick="document.getElementById('deep-scan-modal').classList.add('hidden')" class="w-1/3 py-2 rounded-[10px] font-bold bg-slate-200 dark:bg-slate-800 hover:opacity-90 transition text-slate-700 dark:text-slate-200">Cancel</button>
+                <button onclick="executeDeepScan()" class="w-2/3 py-2 rounded-[10px] font-bold bg-accent text-white hover:opacity-90 transition">Start Batch Audit</button>
             </div>
         </div>
     </div>
@@ -76,17 +253,17 @@
     <!-- UFW DOCKER ADVISORY MODAL -->
     <div id="ufw-docker-modal" class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm hidden p-4">
         <div class="bg-white dark:bg-darkNav p-8 rounded-xl w-[500px] shadow-2xl border border-amber-500/50 relative">
-            <h2 class="text-xl font-bold mb-4 text-amber-500 flex items-center"><svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Docker & UFW Security Advisory</h2>
-            <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Standard UFW rules do <strong>not</strong> block ports published by Docker containers. Because Docker inserts its own iptables rules ahead of UFW, containers bound to public interfaces can remain exposed.</p>
+            <h2 class="text-xl font-bold mb-4 text-amber-500 flex items-center"><svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Docker & Firewall Advisory</h2>
+            <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Standard firewall rules often do <strong>not</strong> block ports published by Docker containers because Docker inserts its own packet filtering rules ahead of host chains.</p>
             <div class="flex flex-col space-y-3">
-                <button onclick="executeUfwScan(true)" class="w-full py-2 rounded font-bold bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition">Yes, I have secured my Docker ports</button>
-                <button onclick="executeUfwScan(false)" class="w-full py-2 rounded font-bold bg-accent text-white hover:opacity-90 transition">Not sure — Please scan for me</button>
-                <button onclick="document.getElementById('ufw-docker-modal').classList.add('hidden')" class="w-full py-2 rounded font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition mt-2">Cancel</button>
+                <button onclick="executeFirewallScan(true)" class="w-full py-2 rounded-[10px] font-bold bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition">Yes, I have secured my Docker ports</button>
+                <button onclick="executeFirewallScan(false)" class="w-full py-2 rounded-[10px] font-bold bg-accent text-white hover:opacity-90 transition">Not sure — Please scan for me</button>
+                <button onclick="document.getElementById('ufw-docker-modal').classList.add('hidden')" class="w-full py-2 rounded-[10px] font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition mt-2">Cancel</button>
             </div>
         </div>
     </div>
 
-    <!-- PIN RESET & AUTH LOGIC -->
+    <!-- PIN RESET MODAL -->
     <div id="pin-reset-modal" class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm hidden p-4">
         <div class="bg-white dark:bg-darkNav p-8 rounded-xl w-96 shadow-2xl border border-slate-200 dark:border-slate-800 relative">
             <h2 class="text-xl font-bold mb-6 text-center text-accent">Change Master PIN</h2>
@@ -94,7 +271,7 @@
                 <input type="password" id="reset-current" placeholder="Current PIN" required class="w-full px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none">
                 <input type="password" id="reset-new" placeholder="New PIN" required minlength="4" class="w-full px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none">
                 <input type="password" id="reset-confirm" placeholder="Confirm New PIN" required minlength="4" class="w-full px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none">
-                <div class="flex space-x-2 pt-2"><button type="button" onclick="closePinReset()" class="w-1/2 py-2 rounded font-bold bg-slate-200 dark:bg-slate-800 hover:opacity-90 transition">Cancel</button><button type="submit" class="w-1/2 py-2 rounded font-bold bg-accent text-white hover:opacity-90 transition">Re-Key Vault</button></div>
+                <div class="flex space-x-2 pt-2"><button type="button" onclick="closePinReset()" class="w-1/2 py-2 rounded-[10px] font-bold bg-slate-200 dark:bg-slate-800 hover:opacity-90 transition">Cancel</button><button type="submit" class="w-1/2 py-2 rounded-[10px] font-bold bg-accent text-white hover:opacity-90 transition">Re-Key Vault</button></div>
             </form>
         </div>
     </div>
@@ -106,7 +283,7 @@
             <p class="text-sm text-slate-600 dark:text-slate-300 mb-6" id="totp-prompt">Please enter your code.</p>
             <form onsubmit="submitTotp(event)" class="space-y-4">
                 <input type="text" id="totp-input" required class="w-full px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-center tracking-widest font-mono text-lg">
-                <div class="flex space-x-2"><button type="button" onclick="document.getElementById('totp-modal').classList.add('hidden')" class="w-1/3 py-2 rounded font-bold bg-slate-200 dark:bg-slate-800 hover:opacity-90 transition">Cancel</button><button type="submit" class="w-2/3 py-2 rounded font-bold bg-accent text-white hover:opacity-90 transition">Submit</button></div>
+                <div class="flex space-x-2"><button type="button" onclick="document.getElementById('totp-modal').classList.add('hidden')" class="w-1/3 py-2 rounded-[10px] font-bold bg-slate-200 dark:bg-slate-800 hover:opacity-90 transition">Cancel</button><button type="submit" class="w-2/3 py-2 rounded-[10px] font-bold bg-accent text-white hover:opacity-90 transition">Submit</button></div>
             </form>
         </div>
     </div>
@@ -117,7 +294,7 @@
             <h2 class="text-xl font-bold mb-6 text-center text-slate-800 dark:text-slate-100">Vault Access</h2>
             <form onsubmit="handleLogin(event)" class="space-y-4">
                 <input type="password" id="login-pass" placeholder="Master PIN" required class="w-full px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-center tracking-widest font-mono">
-                <button type="submit" class="w-full py-2 rounded font-bold bg-accent text-white hover:opacity-90 transition">Decrypt & Enter</button>
+                <button type="submit" class="w-full py-2 rounded-[10px] font-bold bg-accent text-white hover:opacity-90 transition">Decrypt & Enter</button>
             </form>
         </div>
         <div id="setup-view" class="bg-white dark:bg-darkNav p-8 rounded-xl w-96 shadow-2xl border border-slate-200 dark:border-slate-800 hidden">
@@ -125,7 +302,7 @@
             <form onsubmit="handleSetup(event)" class="space-y-4">
                 <input type="password" id="setup-pass" placeholder="New Master PIN" required minlength="4" class="w-full px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-center tracking-widest font-mono">
                 <input type="password" id="setup-pass-confirm" placeholder="Confirm Master PIN" required minlength="4" class="w-full px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-center tracking-widest font-mono">
-                <button type="submit" class="w-full py-2 rounded font-bold bg-accent text-white hover:opacity-90 transition">Lock & Initialize</button>
+                <button type="submit" class="w-full py-2 rounded-[10px] font-bold bg-accent text-white hover:opacity-90 transition">Lock & Initialize</button>
             </form>
         </div>
     </div>
@@ -133,7 +310,7 @@
     <!-- DIAGNOSTICS MODAL -->
     <div id="diagnostics-modal" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm hidden p-4">
         <div class="bg-darkNav w-[95vw] h-[90vh] rounded-xl shadow-2xl border border-slate-800 flex flex-col overflow-hidden">
-            <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900 shrink-0"><h2 id="diag-title" class="text-lg font-bold text-slate-100 font-mono">Diagnostics Viewer</h2><button onclick="closeDiagnostics()" class="text-rose-500 hover:text-rose-400 font-bold px-3 py-1 rounded bg-rose-500/10 transition-colors">Close (ESC)</button></div>
+            <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900 shrink-0"><h2 id="diag-title" class="text-lg font-bold text-slate-100 font-mono">Diagnostics Viewer</h2><button onclick="closeDiagnostics()" class="text-rose-500 hover:text-rose-400 font-bold px-3 py-1 rounded-[10px] bg-rose-500/10 transition-colors">Close (ESC)</button></div>
             <div id="view-modal-terminal" class="flex-1 p-2 bg-[#0f172a] relative"></div>
         </div>
     </div>
@@ -143,7 +320,7 @@
         <div class="p-4 border-b border-slate-200 dark:border-slate-800 font-bold flex justify-between items-center whitespace-nowrap bg-white dark:bg-darkNav mt-2"><span>Servers</span><button onclick="showAddServerForm()" class="text-xs px-2 py-1 rounded bg-accent text-white hover:opacity-90">+ Add</button></div>
         <div id="server-list" class="flex-1 p-2 space-y-1 overflow-y-auto"></div>
         <div class="p-4 border-t border-slate-200 dark:border-slate-800 flex flex-col space-y-2 whitespace-nowrap shrink-0">
-            <div class="flex flex-col space-y-1 mb-2 pb-3 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex flex-col space-y-1 mb-1 pb-2 border-b border-slate-200 dark:border-slate-700">
                 <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 text-center mb-1">Server Config Management</div>
                 <div class="flex space-x-2">
                     <button onclick="exportVault()" class="w-1/2 py-1.5 flex justify-center items-center text-slate-500 hover:text-accent transition border border-transparent hover:border-slate-200 dark:hover:border-slate-700 rounded bg-slate-50 dark:bg-slate-900/50" title="Export Configs"><svg class="w-3.5 h-3.5 mr-1.5 opacity-70" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg><span class="text-xs font-bold">Export</span></button>
@@ -151,11 +328,35 @@
                     <input type="file" id="import-upload" accept=".json" class="hidden" onchange="importVault(event)">
                 </div>
             </div>
-            <button onclick="openPinReset()" class="w-full py-1.5 flex justify-center items-center text-slate-500 hover:text-accent transition border border-transparent hover:border-slate-200 dark:hover:border-slate-700 rounded bg-slate-50 dark:bg-slate-900/50 mb-1"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg><span class="text-xs font-bold">Change PIN</span></button>
-            <button onclick="logout()" class="w-full py-1.5 text-xs font-bold rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition">Logout</button>
+
+            <!-- 1. ABUSEIPDB API KEY BUTTON -->
+            <button onclick="openAbuseIpDbModal()" class="w-full py-1.5 px-3 flex items-center justify-center space-x-2 text-xs font-semibold rounded-[10px] border border-accent bg-transparent text-slate-700 dark:text-slate-300 hover:bg-accent/10 hover:text-accent transition shadow-sm mb-0.5">
+                <svg class="w-3.5 h-3.5 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                <span class="truncate">AbuseIPDB API Key</span>
+            </button>
+
+            <!-- 2. DEMO MODE TOGGLE -->
+            <button onclick="toggleDemoMode()" id="sidebar-demo-btn" class="w-full py-1.5 px-3 flex items-center justify-between text-xs font-semibold rounded-[10px] border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 text-slate-700 dark:text-slate-300 hover:border-accent transition shadow-sm mb-0.5">
+                <span class="flex items-center space-x-2"><span class="text-sm">🕶️</span> <span>Demo Mode</span></span>
+                <span id="demo-toggle-chip" class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-400">OFF</span>
+            </button>
+
+            <!-- SEPARATOR BETWEEN UTILITIES & SECURITY ACTIONS -->
+            <div class="border-t border-slate-200 dark:border-slate-700/80 my-1"></div>
+
+            <!-- 3. CHANGE PIN -->
+            <button onclick="openPinReset()" class="w-full py-1.5 flex justify-center items-center text-slate-500 hover:text-accent transition border border-transparent hover:border-slate-200 dark:hover:border-slate-700 rounded bg-slate-50 dark:bg-slate-900/50 mb-0.5"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg><span class="text-xs font-bold">Change PIN</span></button>
+
+            <!-- 4. EMERGENCY LOCK (Sole explicit exit action) -->
             <button onclick="emergencyLock()" class="w-full py-1.5 text-xs font-bold rounded bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white transition">Emergency Lock</button>
-            <div class="flex items-center justify-center pt-2 pb-1"><button onclick="document.documentElement.classList.toggle('dark')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg></button></div>
-            <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide"><span>Created by Gemini AI | </span><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.5.1 Changelog</span></div>
+            
+            <div class="flex items-center justify-center pt-2 pb-0.5"><button onclick="document.documentElement.classList.toggle('dark')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg></button></div>
+            
+            <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
+            <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
+                <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.8.6 Changelog</span></div>
+            </div>
         </div>
     </nav>
 
@@ -180,7 +381,6 @@
                 <div id="telemetry-bar" class="hidden text-xs font-mono text-slate-400 bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-1.5 flex space-x-6 items-center shadow-inner">
                     <span class="flex items-center space-x-1.5"><span class="text-emerald-500">●</span> <span>CPU: <span id="stat-cpu" class="text-slate-700 dark:text-slate-300 font-bold">--</span></span></span>
                     <span class="flex items-center space-x-1.5"><span class="text-blue-500">●</span> <span>RAM: <span id="stat-ram" class="text-slate-700 dark:text-slate-300 font-bold">--</span></span></span>
-                    <span class="flex items-center space-x-1.5"><span class="text-purple-500">●</span> <span>IP: <span id="stat-ip" class="text-slate-700 dark:text-slate-300 font-bold">--</span></span></span>
                 </div>
             </div>
         </header>
@@ -194,14 +394,50 @@
             </div>
 
             <div id="view-logs" class="absolute inset-0 bg-white dark:bg-darkNav p-4 hidden flex-col">
-                <div class="flex justify-between items-center mb-2 space-x-4 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div class="flex justify-between items-center mb-2 space-x-4 border-b border-slate-200 dark:border-slate-800 pb-3 flex-wrap gap-y-2">
                     <div id="log-buttons" class="flex space-x-2 overflow-visible items-center"></div>
-                    <div class="flex space-x-2 shrink-0 items-center bg-slate-100 dark:bg-slate-900 p-1.5 rounded-lg border border-slate-300 dark:border-slate-700">
-                        <svg class="w-4 h-4 text-slate-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                        <input type="text" id="log-grep-input" placeholder="Grep filter..." class="w-48 px-2 py-1 text-sm bg-transparent text-slate-800 dark:text-slate-200 outline-none">
+                    <div class="flex items-center space-x-2 shrink-0">
+                        <button id="btn-scan-threats" onclick="scanCurrentLogForThreats()" class="flex items-center space-x-2 px-3 py-1.5 text-xs font-semibold rounded-[10px] border border-accent bg-transparent text-slate-600 dark:text-slate-300 hover:border-accent hover:bg-accent/10 hover:text-accent dark:hover:text-white transition-all shadow-sm">
+                            <svg class="w-3.5 h-3.5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            <span>Scan for Threats</span>
+                        </button>
+                        <div class="flex space-x-2 shrink-0 items-center bg-slate-100 dark:bg-slate-900 p-1.5 rounded-lg border border-slate-300 dark:border-slate-700">
+                            <svg class="w-4 h-4 text-slate-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            <input type="text" id="log-grep-input" placeholder="Grep (last 500 lines)..." class="w-44 px-2 py-0.5 text-sm bg-transparent text-slate-800 dark:text-slate-200 outline-none">
+                        </div>
                     </div>
                 </div>
-                <div id="log-terminal" class="flex-1 bg-[#0f172a] rounded overflow-hidden p-2"></div>
+                
+                <div id="log-terminal-container" class="flex-1 bg-[#0f172a] rounded overflow-hidden p-2 relative flex flex-col min-h-0">
+                    <div id="log-terminal" class="flex-1"></div>
+                </div>
+
+                <div id="threat-triage-panel" class="hidden mt-3 p-4 bg-slate-50 dark:bg-slate-900/90 border border-amber-500/40 rounded-xl max-h-72 overflow-y-auto shrink-0 shadow-xl transition-all">
+                    <div class="flex justify-between items-center mb-3 border-b border-slate-200 dark:border-slate-800 pb-2">
+                        <div class="flex items-center space-x-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping"></span>
+                            <div>
+                                <h3 class="text-sm font-bold text-amber-500 uppercase tracking-wider flex items-center">🚨 Threat Triage Queue (Top 25 Actionable Threats)</h3>
+                                <p class="text-[11px] text-slate-400 mt-1 font-normal tracking-normal lowercase first-letter:capitalize">Deep scan inspects 10,000 log lines. Host WAN or reverse proxy IPs appearing in 401/403 logs are listed for review.</p>
+                            </div>
+                            <span id="threat-count-badge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-bold"></span>
+                        </div>
+                        <button onclick="document.getElementById('threat-triage-panel').classList.add('hidden')" class="text-xs text-slate-400 hover:text-rose-500 font-bold px-2 py-1 rounded bg-slate-200 dark:bg-slate-800 transition">✕ Close Queue</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs text-slate-600 dark:text-slate-300 select-none">
+                            <thead class="text-[11px] uppercase bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400">
+                                <tr>
+                                    <th class="px-3 py-2 rounded-l">Offender IP</th>
+                                    <th class="px-3 py-2 text-center">Failed Hits / 401s</th>
+                                    <th class="px-3 py-2">Geolocation & ISP</th>
+                                    <th class="px-3 py-2 text-right rounded-r">Autonomous Defense</th>
+                                </tr>
+                            </thead>
+                            <tbody id="threat-table-body" class="font-mono"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
             <div id="view-docker" class="absolute inset-0 bg-white dark:bg-darkNav p-4 hidden flex-col overflow-y-auto">
@@ -223,12 +459,10 @@
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-xl font-bold">Security Audit Suite</h2>
                     <div class="flex space-x-2">
-                        <button onclick="runSecurityScan('rkhunter')" class="bg-slate-200 dark:bg-slate-700 px-4 py-2 rounded text-sm font-bold shadow hover:bg-slate-300 dark:hover:bg-slate-600 transition">Local Rootkit Scan</button>
-                        <button onclick="openDeepScanModal()" class="bg-accent text-white px-4 py-2 rounded text-sm font-bold shadow hover:bg-orange-600 transition">Deep Batch Scan & Export</button>
+                        <button onclick="openDeepScanModal()" class="bg-accent text-white px-4 py-2 rounded-[10px] text-sm font-bold shadow hover:bg-orange-600 transition">Deep Batch Scan & Export</button>
                     </div>
                 </div>
                 
-                <!-- Live Status Pulse Indicator -->
                 <div id="scan-status-container" class="hidden w-full border border-accent rounded-[10px] bg-transparent p-3 mb-6 flex items-center justify-between shadow-sm">
                     <div class="flex items-center space-x-2">
                         <span class="w-2.5 h-2.5 rounded-full bg-accent animate-ping"></span>
@@ -253,11 +487,12 @@
                                 <button onclick="document.getElementById('sec-nmap-flags').value='-A'" class="bg-slate-200 dark:bg-slate-800 text-xs px-3 py-1 rounded hover:bg-slate-300 dark:hover:bg-slate-700 transition">Deep (-A)</button>
                                 <button onclick="document.getElementById('sec-nmap-flags').value='--top-ports 1000'" class="bg-slate-200 dark:bg-slate-800 text-xs px-3 py-1 rounded hover:bg-slate-300 dark:hover:bg-slate-700 transition">Top 1000</button>
                             </div>
-                            <div class="flex">
+                            <div class="flex mb-2">
                                 <span class="bg-slate-200 dark:bg-slate-700 px-3 py-2 rounded-l text-sm border-r border-slate-300 dark:border-slate-600 font-mono">nmap</span>
                                 <input type="text" id="sec-nmap-flags" placeholder="Custom flags" class="flex-1 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm outline-none border-y border-slate-200 dark:border-slate-700 font-mono">
                                 <button onclick="runSecurityScan('nmap')" class="bg-accent text-white px-4 py-2 rounded-r text-sm font-bold hover:bg-orange-600 transition">Run</button>
                             </div>
+                            <div class="text-[10px] text-slate-400 italic">Nmap Security Scanner is (C) 1996–2026 Nmap Software LLC | https://nmap.org</div>
                         </div>
                     </div>
 
@@ -275,8 +510,8 @@
                             <p class="text-sm mb-4">Analyze HTTP security headers & certs.</p>
                         </div>
                         <div class="flex space-x-2">
-                            <button onclick="runSecurityScan('curl')" class="flex-1 bg-slate-200 dark:bg-slate-800 text-sm px-3 py-2 rounded hover:bg-slate-300 dark:hover:bg-slate-700 font-medium transition">Analyze Headers</button>
-                            <button onclick="runSecurityScan('ssl')" class="flex-1 bg-slate-200 dark:bg-slate-800 text-sm px-3 py-2 rounded hover:bg-slate-300 dark:hover:bg-slate-700 font-medium transition">Check SSL Expiry</button>
+                            <button onclick="runSecurityScan('curl')" class="flex-1 bg-slate-200 dark:bg-slate-800 text-sm px-3 py-2 rounded-[10px] hover:bg-slate-300 dark:hover:bg-slate-700 font-medium transition">Analyze Headers</button>
+                            <button onclick="runSecurityScan('ssl')" class="flex-1 bg-slate-200 dark:bg-slate-800 text-sm px-3 py-2 rounded-[10px] hover:bg-slate-300 dark:hover:bg-slate-700 font-medium transition">Check SSL Expiry</button>
                         </div>
                     </div>
 
@@ -288,25 +523,26 @@
                             <p class="text-sm mb-4">Monitor active bans & threat decisions.</p>
                         </div>
                         <div class="flex space-x-2">
-                            <button onclick="runSecurityScan('fail2ban')" class="flex-1 bg-slate-200 dark:bg-slate-800 text-sm px-3 py-2 rounded hover:bg-slate-300 dark:hover:bg-slate-700 font-medium transition">Fail2Ban + Bans</button>
-                            <button onclick="runSecurityScan('crowdsec')" class="flex-1 bg-slate-200 dark:bg-slate-800 text-sm px-3 py-2 rounded hover:bg-slate-300 dark:hover:bg-slate-700 font-medium transition">CrowdSec + Decisions</button>
+                            <button onclick="runSecurityScan('fail2ban')" class="flex-1 bg-slate-200 dark:bg-slate-800 text-xs px-2.5 py-2 rounded-[10px] hover:bg-slate-300 dark:hover:bg-slate-700 font-semibold transition">Fail2Ban + Bans</button>
+                            <button onclick="runSecurityScan('crowdsec')" class="flex-1 bg-slate-200 dark:bg-slate-800 text-xs px-2.5 py-2 rounded-[10px] hover:bg-slate-300 dark:hover:bg-slate-700 font-semibold transition">CrowdSec</button>
+                            <button onclick="openThreatMapModal()" class="flex-1 px-2.5 py-2 text-xs font-semibold rounded-[10px] border border-accent bg-transparent text-slate-700 dark:text-slate-300 hover:bg-accent/10 hover:text-accent transition shadow-sm text-center">Threats By Country</button>
                         </div>
                     </div>
 
-                    <!-- Firewall -->
+                    <!-- Universal Firewall -->
                     <div class="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-darkNav flex flex-col justify-between shadow-sm">
                         <div>
-                            <div class="flex items-center mb-2"><svg class="w-5 h-5 text-accent mr-2" fill="currentColor" viewBox="0 0 640 512"><path d="M0 64c0-17.7 14.3-32 32-32H256v96H0V64zM288 32H608c17.7 0 32 14.3 32 32v64H288V32zM0 160h64v96H0V160zm96 0H384v96H96V160zm320 0H640v96H416V160zM0 288H256v96H0V288zm288 0H640v96H288V288zM0 416h64v64c0 17.7 14.3 32 32 32h160V416H0zm288 0v96H608c17.7 0 32-14.3 32-32V416H288z"/></svg><h3 class="font-bold">Firewall Status</h3></div>
-                            <p class="text-xs text-slate-500 mb-3">Target: <span class="text-accent">Active SSH Session</span></p>
-                            <p class="text-sm mb-4">Review active firewall routing rules.</p>
+                            <div class="flex items-center mb-2"><svg class="w-5 h-5 text-accent mr-2" fill="currentColor" viewBox="0 0 640 512"><path d="M0 64c0-17.7 14.3-32 32-32H256v96H0V64zM288 32H608c17.7 0 32 14.3 32 32v64H288V32zM0 160h64v96H0V160zm96 0H384v96H96V160zm320 0H640v96H416V160zM0 288H256v96H0V288zm288 0H640v96H288V288zM0 416h64v64c0 17.7 14.3 32 32 32h160V416H0zm288 0v96H608c17.7 0 32-14.3 32-32V416H288z"/></svg><h3 class="font-bold">Firewall Routing Status</h3></div>
+                            <p class="text-xs text-slate-500 mb-3">Auto-Probe: <span class="text-accent">UFW / Firewalld / Nftables / Iptables</span></p>
+                            <p class="text-sm mb-4">Inspect live firewall rules on connected node.</p>
                         </div>
-                        <button onclick="initUfwCheck()" class="w-full bg-slate-200 dark:bg-slate-800 text-sm px-3 py-2 rounded hover:bg-slate-300 dark:hover:bg-slate-700 font-medium transition">UFW Status</button>
+                        <button onclick="initFirewallCheck()" class="w-full bg-slate-200 dark:bg-slate-800 text-sm px-3 py-2 rounded-[10px] hover:bg-slate-300 dark:hover:bg-slate-700 font-medium transition">Inspect Active Firewall</button>
                     </div>
                 </div>
 
                 <div class="bg-[#1e1e1e] rounded-lg p-4 border border-slate-700 flex-1 overflow-y-auto shadow-inner min-h-[200px]">
                     <div id="securityTerm" class="font-mono text-sm text-sky-400 whitespace-pre">
-                        <p class="text-slate-500">BastionCC Security Audit Engine v1.5.1</p>
+                        <p class="text-slate-500">BastionCC Security Audit Engine v1.8.5</p>
                         <p class="text-slate-500">Ready for target acquisition...</p>
                         <p class="text-accent mt-2">> _</p>
                     </div>
@@ -320,19 +556,29 @@
                     <input type="text" id="frm-name" placeholder="Server Name" class="w-full px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 outline-none focus:border-accent">
                     <div class="grid grid-cols-2 gap-4"><input type="text" id="frm-host" placeholder="IP / Hostname" class="px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:border-accent"><input type="number" id="frm-port" value="22" class="px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:border-accent"></div>
                     <div class="grid grid-cols-2 gap-4">
-                        <div class="col-span-1"><label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Username</label><input type="text" id="frm-user" value="root" class="w-full px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:border-accent"></div>
                         <div class="col-span-1">
-                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Feature Management</label>
-                            <div class="flex space-x-2">
-                                <label class="flex items-center space-x-1 text-xs cursor-pointer bg-slate-100 dark:bg-slate-800/50 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700"><input type="checkbox" id="frm-docker" checked> <span>Docker</span></label>
-                                <label class="flex items-center space-x-1 text-xs cursor-pointer bg-slate-100 dark:bg-slate-800/50 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700"><input type="checkbox" id="frm-logs" checked> <span>Logs</span></label>
-                                <label class="flex items-center space-x-1 text-xs cursor-pointer bg-slate-100 dark:bg-slate-800/50 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700"><input type="checkbox" id="frm-security" checked> <span>Security</span></label>
-                            </div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Username</label>
+                            <input type="text" id="frm-user" value="root" class="w-full px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:border-accent">
+                        </div>
+                        <div class="col-span-1">
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Sudo Privileges</label>
+                            <label class="flex items-center space-x-2 cursor-pointer bg-slate-100 dark:bg-slate-800/50 px-3 py-2 rounded border border-slate-200 dark:border-slate-700">
+                                <input type="checkbox" id="frm-sudo" checked class="accent-orange-500">
+                                <span class="text-xs font-semibold">User is a Member of Sudo</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Feature Management</label>
+                        <div class="flex space-x-2">
+                            <label class="flex items-center space-x-1 text-xs cursor-pointer bg-slate-100 dark:bg-slate-800/50 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700"><input type="checkbox" id="frm-docker" checked> <span>Docker</span></label>
+                            <label class="flex items-center space-x-1 text-xs cursor-pointer bg-slate-100 dark:bg-slate-800/50 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700"><input type="checkbox" id="frm-logs" checked> <span>Logs</span></label>
+                            <label class="flex items-center space-x-1 text-xs cursor-pointer bg-slate-100 dark:bg-slate-800/50 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700"><input type="checkbox" id="frm-security" checked> <span>Security</span></label>
                         </div>
                     </div>
                     
-                    <!-- AUTH TOGGLE -->
-                    <div class="col-span-2 mt-2 mb-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded border border-slate-200 dark:border-slate-800">
+                    <div class="mt-2 mb-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded border border-slate-200 dark:border-slate-800">
                         <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Authentication Method</label>
                         <div class="flex items-center space-x-3">
                             <span class="text-sm font-semibold text-accent" id="lbl-auth-key">Public Key</span>
@@ -380,10 +626,85 @@
         let currentDockerRaw = []; let dSort = { col: 'name', dir: 1 };
         let liveLogLines = []; let currentLogPartial = ''; let dotInterval = null; let dotCount = 0;
         let currentTotpServerId = null;
+        let activeLogSource = { type: 'systemd', path: 'syslog' };
+        const whoisCache = new Map();
+        let pendingDefense = { ip: null, mode: null, rowIndex: null };
+        let activeVectorMap = null;
+
+        // --- DETERMINISTIC DEMO MODE OBFUSCATION ENGINE ---
+        let isDemoMode = localStorage.getItem('bastioncc_demo_mode') === 'true';
+        const demoIpMap = new Map();
+        let demoIpCounter = 10;
+
+        function getDeterministicMockIp(realIp) {
+            if (!demoIpMap.has(realIp)) {
+                demoIpCounter++;
+                const oct3 = Math.floor(demoIpCounter / 250);
+                const oct4 = (demoIpCounter % 250) + 1;
+                demoIpMap.set(realIp, `10.0.${oct3}.${oct4}`);
+            }
+            return demoIpMap.get(realIp);
+        }
+
+        function maskDemoText(text) {
+            if (!isDemoMode || !text) return text;
+            const str = String(text);
+            const ipRegex = /\b(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\b/g;
+            const domainRegex = /https?:\/\/([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+            
+            let masked = str.replace(domainRegex, (match, host) => {
+                return match.replace(host, 'app.demo-internal.net');
+            });
+            masked = masked.replace(ipRegex, match => getDeterministicMockIp(match));
+            return masked;
+        }
+
+        function updateDemoModeUI() {
+            const chip = document.getElementById('demo-toggle-chip');
+            const ind = document.getElementById('demo-mode-indicator');
+            if (isDemoMode) {
+                chip.innerText = 'ON';
+                chip.className = 'text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+                ind.classList.remove('hidden');
+            } else {
+                chip.innerText = 'OFF';
+                chip.className = 'text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-400';
+                ind.classList.add('hidden');
+            }
+        }
+
+        function toggleDemoMode() {
+            isDemoMode = !isDemoMode;
+            localStorage.setItem('bastioncc_demo_mode', isDemoMode);
+            updateDemoModeUI();
+            showToast(isDemoMode ? '🕶️ Demo Mode Enabled (PII Obfuscated)' : 'Demo Mode Disabled (Live Telemetry)');
+            if (activeLogSource && activeLogSource.path) renderFilteredLogs();
+            renderSidebar();
+        }
 
         function escapeHtml(str) { return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
 
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const isSuccess = type === 'success';
+            toast.className = `pointer-events-auto flex items-center space-x-2 px-4 py-2.5 rounded-[10px] shadow-2xl text-xs font-semibold text-white border transition-all duration-300 toast-animate ${
+                isSuccess ? 'bg-slate-900 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-rose-500 text-rose-400'
+            }`;
+            toast.innerHTML = `
+                <span class="text-sm">${isSuccess ? '✔' : '❌'}</span>
+                <span>${escapeHtml(message)}</span>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-10px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
         window.addEventListener('DOMContentLoaded', async () => {
+            updateDemoModeUI();
             try {
                 const data = await (await fetch('/api/status')).json();
                 document.getElementById('login-screen').classList.remove('hidden'); document.getElementById('login-screen').classList.add('flex');
@@ -394,6 +715,204 @@
             document.getElementById('log-grep-input').addEventListener('input', renderFilteredLogs);
             document.querySelectorAll('.sort-btn').forEach(btn => btn.addEventListener('click', () => sortDocker(btn.dataset.col)));
         });
+
+        function getTagBadge(tag) {
+            const t = (tag || '').toUpperCase();
+            let colorCls = 'bg-slate-500/10 text-slate-400 border-slate-500/30';
+            if (t === 'SECURITY') colorCls = 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+            else if (t === 'FEATURE') colorCls = 'bg-orange-500/10 text-orange-400 border-orange-500/30';
+            else if (t === 'BUG FIX') colorCls = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+            else if (t === 'UI / UX') colorCls = 'bg-sky-500/10 text-sky-400 border-sky-500/30';
+            else if (t === 'CORE') colorCls = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+            return `<span class="w-[76px] text-center text-[9px] font-bold py-0.5 rounded border ${colorCls} uppercase tracking-wide block shrink-0 font-mono select-none">${escapeHtml(t)}</span>`;
+        }
+
+        // --- DYNAMIC TWO-COLUMN CHANGELOG LOADER ---
+        async function openChangelog() {
+            document.getElementById('changelog-backdrop').classList.remove('hidden');
+            setTimeout(() => document.getElementById('changelog-drawer').classList.remove('translate-x-full'), 10);
+            
+            const container = document.getElementById('changelog-items-container');
+            try {
+                const res = await fetch('/changelog.json');
+                const logs = await res.json();
+                if (Array.isArray(logs) && logs.length > 0) {
+                    container.innerHTML = logs.map(item => `
+                        <div class="border-l-4 ${item.borderColor || 'border-slate-600'} pl-4">
+                            <h3 class="text-base font-bold text-slate-800 dark:text-white flex items-center">
+                                <span>${escapeHtml(item.version)}</span>
+                                ${item.badge ? `<span class="text-xs font-bold text-emerald-500 border border-emerald-500/30 bg-emerald-500/10 rounded px-2 ml-2">${escapeHtml(item.badge)}</span>` : ''}
+                            </h3>
+                            <p class="text-xs text-slate-500 mt-1 font-semibold">${escapeHtml(item.title)}</p>
+                            <ul class="text-xs text-slate-700 dark:text-slate-300 mt-3 space-y-2.5 leading-relaxed">
+                                ${(item.changes || []).map(c => {
+                                    if (typeof c === 'object' && c.tag) {
+                                        return `
+                                            <li class="grid grid-cols-[76px_1fr] items-start gap-2.5">
+                                                ${getTagBadge(c.tag)}
+                                                <span class="leading-relaxed">${escapeHtml(c.text)}</span>
+                                            </li>
+                                        `;
+                                    }
+                                    return `<li class="list-disc list-inside">${escapeHtml(c)}</li>`;
+                                }).join('')}
+                            </ul>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = `<div class="text-slate-400 text-xs font-mono text-center py-6">No changelog records available.</div>`;
+                }
+            } catch(e) {
+                container.innerHTML = `<div class="text-rose-400 text-xs font-mono text-center py-6">Failed to load changelog records.</div>`;
+            }
+        }
+
+        function closeChangelog() {
+            document.getElementById('changelog-drawer').classList.add('translate-x-full');
+            setTimeout(() => document.getElementById('changelog-backdrop').classList.add('hidden'), 300);
+        }
+
+        // --- THREATS BY COUNTRY VECTOR MAP WITH RELIABLE TOOLTIP RENDERING ---
+        function openThreatMapModal() {
+            document.getElementById('threat-map-modal').classList.remove('hidden');
+            socket.emit('fetch-threat-map-data');
+        }
+
+        function closeThreatMapModal() {
+            document.getElementById('threat-map-modal').classList.add('hidden');
+        }
+
+        function renderVectorThreatMap(countryMap) {
+            const container = document.getElementById('jvm-map-container');
+            container.innerHTML = '';
+            
+            const markers = [];
+            const topListEl = document.getElementById('top-threat-countries-list');
+            topListEl.innerHTML = '';
+
+            const sortedCountries = Object.entries(countryMap).sort((a, b) => b[1].total - a[1].total);
+
+            sortedCountries.forEach(([code, data]) => {
+                if (data.coords) {
+                    let dotColor = '#22c55e'; // Green for 1-15
+                    let dotRadius = 5;
+                    if (data.total >= 51) {
+                        dotColor = '#a855f7'; // Purple for 51+
+                        dotRadius = 9;
+                    } else if (data.total >= 16) {
+                        dotColor = '#f97316'; // Orange for 16-50
+                        dotRadius = 7;
+                    }
+
+                    markers.push({
+                        name: `<div style="text-align:left; font-family:monospace; min-width:180px;"><div style="font-weight:bold; color:#f97316; border-bottom:1px solid rgba(249,115,22,0.4); padding-bottom:3px; margin-bottom:4px;">${escapeHtml(data.countryName)} (${code})</div><div style="font-weight:bold; color:#f8fafc; margin-bottom:4px;">Total Banned: <span style="color:#fb923c;">${data.total}</span></div><div style="font-size:11px; color:#cbd5e1; line-height:1.4;"><div>🔴 High Threat: <b>${data.breakdown['High (Score 5)']}</b></div><div>🟡 Moderate Threat: <b>${data.breakdown['Moderate (Score 3)']}</b></div><div>🟢 Low Threat: <b>${data.breakdown['Low (Score 1)']}</b></div></div></div>`,
+                        coords: data.coords,
+                        style: { fill: dotColor, stroke: '#0f172a', strokeWidth: 1.5, r: dotRadius }
+                    });
+                }
+            });
+
+            if (sortedCountries.length === 0) {
+                topListEl.innerHTML = `<div class="p-2 text-center text-slate-500 italic text-xs font-mono">No manual bans recorded yet.</div>`;
+            } else {
+                topListEl.innerHTML = sortedCountries.slice(0, 6).map(([code, data]) => {
+                    let badgeClass = 'bg-emerald-500/20 text-emerald-400';
+                    if (data.total >= 51) badgeClass = 'bg-purple-500/20 text-purple-400';
+                    else if (data.total >= 16) badgeClass = 'bg-orange-500/20 text-orange-400';
+
+                    return `
+                        <div class="flex items-center justify-between p-2 rounded bg-white dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 text-xs font-mono">
+                            <span class="font-bold text-slate-800 dark:text-slate-200">${escapeHtml(data.countryName)} (${code})</span>
+                            <span class="px-2 py-0.5 rounded font-bold ${badgeClass}">${data.total} bans</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            try {
+                activeVectorMap = new jsVectorMap({
+                    selector: '#jvm-map-container',
+                    map: 'world',
+                    zoomButtons: true,
+                    zoomOnScroll: true,
+                    regionStyle: {
+                        initial: { fill: '#1e293b', fillOpacity: 0.9, stroke: '#0f172a', strokeWidth: 0.5 },
+                        hover: { fill: '#334155' }
+                    },
+                    markers: markers,
+                    onMarkerTooltipShow(event, tooltip, index) {
+                        const marker = markers[index];
+                        if (marker && marker.name) {
+                            if (typeof tooltip.text === 'function') {
+                                tooltip.text(marker.name, true);
+                            } else if (typeof tooltip.setContent === 'function') {
+                                tooltip.setContent(marker.name);
+                            }
+                        }
+                    }
+                });
+            } catch(e) {
+                console.error("Vector map render exception:", e);
+            }
+        }
+
+        // --- ABUSEIPDB CONFIGURATION LOGIC ---
+        async function openAbuseIpDbModal() {
+            try {
+                const res = await fetch('/api/abuseipdb-status', { headers: { 'Authorization': 'Bearer ' + authToken } });
+                const data = await res.json();
+                const pill = document.getElementById('abuseipdb-status-pill');
+                const delBtn = document.getElementById('btn-delete-abuse-key');
+                if (data.hasKey) {
+                    pill.className = 'px-2.5 py-1 rounded-full font-bold text-[10px] tracking-wide border bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+                    pill.innerText = '✔ AbuseIPDB Active (Global Intelligence)';
+                    delBtn.classList.remove('hidden');
+                } else {
+                    pill.className = 'px-2.5 py-1 rounded-full font-bold text-[10px] tracking-wide border bg-slate-200 dark:bg-slate-800 text-slate-400 border-slate-300 dark:border-slate-700';
+                    pill.innerText = 'Local Heuristics Mode (No Key Set)';
+                    delBtn.classList.add('hidden');
+                }
+                document.getElementById('abuseipdb-key-input').value = '';
+                document.getElementById('abuseipdb-modal').classList.remove('hidden');
+            } catch(e) { showToast('Error checking AbuseIPDB status.', 'error'); }
+        }
+
+        function closeAbuseIpDbModal() { document.getElementById('abuseipdb-modal').classList.add('hidden'); }
+
+        async function saveAbuseIpDbKey() {
+            const key = document.getElementById('abuseipdb-key-input').value.trim();
+            if (!key) return showToast('Please enter an API key or click Cancel.', 'error');
+            try {
+                const res = await fetch('/api/abuseipdb-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                    body: JSON.stringify({ apiKey: key, pin: currentPin })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    whoisCache.clear();
+                    showToast('AbuseIPDB Key saved & encrypted.');
+                    closeAbuseIpDbModal();
+                } else {
+                    showToast(data.message || 'Failed to save key.', 'error');
+                }
+            } catch(e) { showToast('Network error saving key.', 'error'); }
+        }
+
+        async function deleteAbuseIpDbKey() {
+            try {
+                const res = await fetch('/api/abuseipdb-key', {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
+                const data = await res.json();
+                if (data.success) {
+                    whoisCache.clear();
+                    showToast('AbuseIPDB Key removed. Reverted to local heuristics.');
+                    closeAbuseIpDbModal();
+                }
+            } catch(e) { showToast('Network error deleting key.', 'error'); }
+        }
 
         function toggleAuthMethod() {
             const isPass = document.getElementById('frm-auth-method').checked;
@@ -418,7 +937,7 @@
         }
 
         function updateNmapDropdown(activeId) {
-            const html = `<option value="local">Local Host</option>` + serversData.map(s => `<option value="${s.id}">${escapeHtml(s.name)}${s.id === activeId ? ' (Active)' : ''}</option>`).join('');
+            const html = `<option value="local">Local Host</option>` + serversData.map(s => `<option value="${s.id}">${escapeHtml(maskDemoText(s.name))}${s.id === activeId ? ' (Active)' : ''}</option>`).join('');
             const sel1 = document.getElementById('sec-nmap-origin'); if (sel1) { sel1.innerHTML = html; sel1.value = 'local'; }
             const sel2 = document.getElementById('ds-nmap-origin'); if (sel2) { sel2.innerHTML = html; sel2.value = 'local'; }
         }
@@ -446,7 +965,7 @@
         function stopStatusPulse() { clearInterval(dotInterval); const container = document.getElementById('scan-status-container'); if (container) container.classList.add('hidden'); }
 
         function exportVault() {
-            if (serversData.length === 0) return alert('Your vault is empty.');
+            if (serversData.length === 0) return showToast('Your vault is empty.', 'error');
             const safeData = serversData.map(s => { const { encryptedPassphrase, passphrase, tempPlaintext, ...rest } = s; return rest; });
             const blob = new Blob([JSON.stringify(safeData, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `bastioncc-vault-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href);
         }
@@ -455,22 +974,13 @@
             reader.onload = async (event) => {
                 try {
                     const imported = JSON.parse(event.target.result); if (!Array.isArray(imported)) throw new Error('Invalid JSON.');
-                    if (confirm(`Import ${imported.length} server configurations?`)) { imported.forEach(srv => { delete srv.passphrase; delete srv.encryptedPassphrase; srv.id = 'srv_' + Math.random().toString(36).substr(2, 9); socket.emit('save-server', srv); }); alert('Vault import complete.'); }
-                } catch (err) { alert('Error parsing JSON.'); } e.target.value = ''; 
+                    imported.forEach(srv => { delete srv.passphrase; delete srv.encryptedPassphrase; srv.id = 'srv_' + Math.random().toString(36).substr(2, 9); socket.emit('save-server', srv); });
+                    showToast(`Imported ${imported.length} server configurations.`);
+                } catch (err) { showToast('Error parsing JSON vault file.', 'error'); } e.target.value = ''; 
             }; reader.readAsText(file);
         }
 
         function toggleCustomKeyPath() { const sel = document.getElementById('frm-key-type'), cust = document.getElementById('frm-key-custom'); if (sel.value === 'custom') cust.classList.remove('hidden'); else { cust.classList.add('hidden'); cust.value = ''; } }
-        function openChangelog() { document.getElementById('changelog-backdrop').classList.remove('hidden'); setTimeout(() => document.getElementById('changelog-drawer').classList.remove('translate-x-full'), 10); }
-        function closeChangelog() { document.getElementById('changelog-drawer').classList.add('translate-x-full'); setTimeout(() => document.getElementById('changelog-backdrop').classList.add('hidden'), 300); }
-        function openPinReset() { document.getElementById('reset-current').value = ''; document.getElementById('reset-new').value = ''; document.getElementById('reset-confirm').value = ''; document.getElementById('pin-reset-modal').classList.remove('hidden'); }
-        function closePinReset() { document.getElementById('pin-reset-modal').classList.add('hidden'); }
-
-        async function handlePinReset(e) {
-            e.preventDefault(); const cur = document.getElementById('reset-current').value, newP = document.getElementById('reset-new').value, conf = document.getElementById('reset-confirm').value;
-            if (newP !== conf) return alert('New PINs do not match!'); if (newP.length < 4) return alert('New PIN must be at least 4 characters.');
-            try { const res = await fetch('/api/reset-pin', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken }, body: JSON.stringify({ currentPin: cur, newPin: newP }) }); const data = await res.json(); if (data.success) { alert('Master PIN changed. Vault re-keyed. You will now be logged out.'); logout(); } else alert(data.message || 'PIN Reset Failed.'); } catch (err) { alert('Network error.'); }
-        }
 
         function toggleSidebar() {
             const sb = document.getElementById('sidebar');
@@ -478,12 +988,11 @@
             setTimeout(() => { if (fitAddon && term) try { fitAddon.fit(); } catch(e){} if (logFitAddon && logTerm) try { logFitAddon.fit(); } catch(e){} }, 310);
         }
 
-        function logout() { if (socket) socket.disconnect(); window.location.reload(); }
-        function emergencyLock() { if (confirm("🚨 EMERGENCY LOCK 🚨\n\nProceed?")) { if (socket) socket.emit('emergency-lock'); setTimeout(() => logout(), 200); } }
+        function emergencyLock() { socket.emit('emergency-lock'); showToast('🚨 Emergency Lock Executed! Purging session...', 'error'); setTimeout(() => window.location.reload(), 500); }
 
         async function handleSetup(e) {
             e.preventDefault(); const pin = document.getElementById('setup-pass').value, conf = document.getElementById('setup-pass-confirm').value;
-            if (pin !== conf) return alert('PINs do not match!');
+            if (pin !== conf) return showToast('PINs do not match!', 'error');
             const data = await (await fetch('/api/setup', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pin }) })).json();
             if (data.success) { authToken = data.token; currentPin = pin; document.getElementById('login-screen').classList.add('hidden'); document.getElementById('login-screen').classList.remove('flex'); initSocket(authToken, currentPin); }
         }
@@ -492,6 +1001,7 @@
             e.preventDefault(); const pin = document.getElementById('login-pass').value;
             const data = await (await fetch('/api/login', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pin }) })).json();
             if (data.success) { authToken = data.token; currentPin = pin; document.getElementById('login-screen').classList.add('hidden'); document.getElementById('login-screen').classList.remove('flex'); initSocket(authToken, currentPin); }
+            else { showToast('Invalid Master PIN', 'error'); }
         }
 
         function initSocket(token, pin) {
@@ -515,6 +1025,10 @@
                 if (e.key === 'Escape' && !document.getElementById('changelog-drawer').classList.contains('translate-x-full')) closeChangelog();
                 if (e.key === 'Escape' && !document.getElementById('pin-reset-modal').classList.contains('hidden')) closePinReset();
                 if (e.key === 'Escape' && !document.getElementById('totp-modal').classList.contains('hidden')) document.getElementById('totp-modal').classList.add('hidden');
+                if (e.key === 'Escape' && !document.getElementById('whois-modal').classList.contains('hidden')) closeWhoisModal();
+                if (e.key === 'Escape' && !document.getElementById('defense-modal').classList.contains('hidden')) closeDefenseModal();
+                if (e.key === 'Escape' && !document.getElementById('abuseipdb-modal').classList.contains('hidden')) closeAbuseIpDbModal();
+                if (e.key === 'Escape' && !document.getElementById('threat-map-modal').classList.contains('hidden')) closeThreatMapModal();
             });
 
             socket.on('ssh-keyboard-interactive', (data) => {
@@ -528,22 +1042,31 @@
             });
 
             term.onData(data => socket.emit('terminal-input', data));
-            socket.on('terminal-data', data => term.write(data)); socket.on('modal-data', data => modalTerm.write(data));
+            socket.on('terminal-data', data => term.write(data)); 
+            socket.on('modal-data', data => modalTerm.write(maskDemoText(data)));
             
-            socket.on('security-data', data => { const rawFormat = String(data).replace(/\n/g, '<br>').replace(/\x1b\[[0-9;]*m/g, ''); secContainer.innerHTML += `<div>${rawFormat}</div>`; secContainer.parentElement.scrollTop = secContainer.parentElement.scrollHeight; });
-            socket.on('security-status', (text) => updateStatusPulse(text));
+            socket.on('security-data', data => { 
+                const cleanData = maskDemoText(data);
+                const rawFormat = String(cleanData).replace(/\n/g, '<br>').replace(/\x1b\[[0-9;]*m/g, ''); 
+                secContainer.innerHTML += `<div>${rawFormat}</div>`; 
+                secContainer.parentElement.scrollTop = secContainer.parentElement.scrollHeight; 
+            });
+            socket.on('security-status', (text) => updateStatusPulse(maskDemoText(text)));
             socket.on('security-complete', stopStatusPulse);
-            
-            socket.on('rootkit-missing', () => { document.getElementById('rootkit-install-modal').classList.remove('hidden'); });
+
+            socket.on('threat-map-data', renderVectorThreatMap);
 
             socket.on('deep-scan-complete', (htmlContent) => {
                 stopStatusPulse();
-                const blob = new Blob([htmlContent], { type: 'text/html' }), a = document.createElement('a');
+                const cleanReport = maskDemoText(htmlContent);
+                const blob = new Blob([cleanReport], { type: 'text/html' }), a = document.createElement('a');
                 a.href = URL.createObjectURL(blob); a.download = `BastionCC_DeepAudit_${new Date().toISOString().slice(0,10)}.html`; a.click(); URL.revokeObjectURL(a.href);
             });
 
             socket.on('log-data', data => {
-                if(!data) return; const filter = document.getElementById('log-grep-input').value.toLowerCase(), parts = data.split(/\r?\n/);
+                if(!data) return; 
+                const rawText = maskDemoText(data);
+                const filter = document.getElementById('log-grep-input').value.toLowerCase(), parts = rawText.split(/\r?\n/);
                 if(parts.length === 1) currentLogPartial += parts[0];
                 else {
                     liveLogLines.push(currentLogPartial + parts[0]);
@@ -554,7 +1077,7 @@
                 if(filter) {
                     const newLines = [currentLogPartial + parts[0], ...parts.slice(1, -1)].filter(line => line.toLowerCase().includes(filter)).join('\r\n');
                     if(newLines) logTerm.write((liveLogLines.length===1 ? '' : '\r\n') + newLines);
-                } else logTerm.write(data);
+                } else logTerm.write(rawText);
             });
 
             socket.on('log-folder-data', ({ folderPath, files, buttonId }) => {
@@ -569,7 +1092,32 @@
                 closeAllDropdowns(); dd.classList.remove('hidden');
             });
 
-            socket.on('server-stats', data => { document.getElementById('telemetry-bar').classList.remove('hidden'); document.getElementById('stat-cpu').innerText = data.cpu; document.getElementById('stat-ram').innerText = data.ram; document.getElementById('stat-ip').innerText = data.ip; });
+            // Threat scanner responses
+            socket.on('log-threats-result', handleLogThreatsResult);
+            socket.on('block-threat-result', handleBlockThreatResult);
+            socket.on('whois-result', handleWhoisResult);
+
+            // Server telemetry listener with enhanced RAM formatting and live dynamic CPU tick calculation
+            socket.on('server-stats', data => {
+                document.getElementById('telemetry-bar').classList.remove('hidden');
+                document.getElementById('stat-cpu').innerText = data.cpu || '--%';
+                
+                if (data.ram) {
+                    const params = new URLSearchParams(data.ram);
+                    const usedMB = parseInt(params.get('used')) || 0;
+                    const totalMB = parseInt(params.get('total')) || 0;
+                    const freeMB = parseInt(params.get('free')) || 0;
+                    const cacheMB = parseInt(params.get('cache')) || 0;
+                    
+                    const formatSize = (mb) => mb >= 1024 ? (mb / 1024).toFixed(1) + 'GB' : mb + 'MB';
+                    document.getElementById('stat-ram').innerHTML = `
+                        <span class="text-slate-200">${formatSize(usedMB)}</span> / <span class="text-slate-400">${formatSize(totalMB)}</span>
+                        <span class="text-slate-500 mx-1">|</span> Free: <span class="text-emerald-400">${formatSize(freeMB)}</span>
+                        <span class="text-slate-500 mx-1">|</span> Cache: <span class="text-amber-400">${formatSize(cacheMB)}</span>
+                    `;
+                }
+            });
+
             socket.on('docker-data', data => {
                 if (!data.ps || data.ps.length === 0) currentDockerRaw = [];
                 else currentDockerRaw = data.ps.map(p => { const stat = (data.stats || []).find(s => s.Name === p.Names) || { CPUPerc: '--', MemUsage: '--' }; return { ...p, CPUPerc: stat.CPUPerc, MemUsage: stat.MemUsage }; });
@@ -583,14 +1131,13 @@
             socket.on('sftp-download-chunk', ({chunk}) => downloadedChunks.push(new Uint8Array(chunk)));
             socket.on('sftp-download-complete', (filePath) => { const blob = new Blob(downloadedChunks), url = window.URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = filePath.split('/').pop(); a.click(); window.URL.revokeObjectURL(url); downloadedChunks = []; });
             socket.on('sftp-upload-complete', () => socket.emit('sftp-list', currentSftpPath));
-            socket.on('connect_error', (err) => { if (err.message === 'System requires setup' || err.message === 'Invalid token') logout(); });
+            socket.on('connect_error', (err) => { if (err.message === 'System requires setup' || err.message === 'Invalid token') window.location.reload(); });
         }
 
         function closeAllDropdowns() { document.querySelectorAll('.folder-dropdown').forEach(el => el.classList.add('hidden')); }
-        function confirmRootkitInstall() { document.getElementById('rootkit-install-modal').classList.add('hidden'); document.getElementById('securityTerm').innerHTML = ''; startStatusPulse('Auto-Installing Rootkit Scanners'); socket.emit('install-rootkit'); }
 
         function runSecurityScan(type) {
-            if (!activeServerId && type === 'nmap') return alert('Please select a target server from the sidebar first.');
+            if (!activeServerId && type === 'nmap') return showToast('Please select a target server from the sidebar first.', 'error');
             document.getElementById('securityTerm').innerHTML = '';
             startStatusPulse(`Initiating ${type.toUpperCase()}`);
             const payload = { type, targetServerId: activeServerId };
@@ -599,17 +1146,262 @@
             socket.emit('security-scan', payload);
         }
 
-        function initUfwCheck() { const srv = serversData.find(s => s.id === activeServerId); if (srv && srv.dockerEnabled !== false) document.getElementById('ufw-docker-modal').classList.remove('hidden'); else runSecurityScan('ufw-status'); }
-        function executeUfwScan(isSecured) { document.getElementById('ufw-docker-modal').classList.add('hidden'); if (isSecured) runSecurityScan('ufw-status'); else runSecurityScan('ufw-check'); }
+        function initFirewallCheck() {
+            const srv = serversData.find(s => s.id === activeServerId);
+            if (srv && srv.dockerEnabled !== false) document.getElementById('ufw-docker-modal').classList.remove('hidden');
+            else executeFirewallScan(true);
+        }
+        function executeFirewallScan(isSecured) {
+            document.getElementById('ufw-docker-modal').classList.add('hidden');
+            runSecurityScan('firewall-check');
+        }
 
         function renderFilteredLogs() {
             logTerm.clear(); const activeFilter = document.getElementById('log-grep-input').value.toLowerCase();
             logTerm.write(liveLogLines.filter(line => !activeFilter || line.toLowerCase().includes(activeFilter)).join('\r\n') + (currentLogPartial ? '\r\n' + currentLogPartial : ''));
         }
 
-        function fetchLog(type, path) { logTerm.clear(); logTerm.writeln(`\x1b[36mFetching [${type}]: ${path}...\x1b[0m\r\n`); socket.emit('fetch-server-log', { type, path }); }
+        function fetchLog(type, path) {
+            activeLogSource = { type, path };
+            logTerm.clear(); logTerm.writeln(`\x1b[36mFetching [${type}]: ${maskDemoText(path)}...\x1b[0m\r\n`);
+            socket.emit('fetch-server-log', { type, path });
+        }
+
         function scanLogFolder(path, btn, e) { e.stopPropagation(); socket.emit('scan-log-folder', { path, buttonId: btn.parentElement.id }); }
         function sortDocker(col) { if (dSort.col === col) dSort.dir *= -1; else { dSort.col = col; dSort.dir = 1; } renderDockerGrid(); }
+
+        function scanCurrentLogForThreats() {
+            if (!activeLogSource || !activeLogSource.path) return showToast('Please open a log file or systemd journal first.', 'error');
+            const btn = document.getElementById('btn-scan-threats');
+            btn.innerHTML = `<svg class="w-3.5 h-3.5 text-accent animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg><span>Scanning...</span>`;
+            btn.disabled = true;
+            socket.emit('scan-log-threats', { type: activeLogSource.type, path: activeLogSource.path });
+        }
+
+        function handleLogThreatsResult({ logPath, threats, error }) {
+            const btn = document.getElementById('btn-scan-threats');
+            btn.innerHTML = `<svg class="w-3.5 h-3.5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg><span>Scan for Threats</span>`;
+            btn.disabled = false;
+
+            if (error) return showToast(`Threat Scan Error: ${error}`, 'error');
+            
+            const panel = document.getElementById('threat-triage-panel');
+            const tbody = document.getElementById('threat-table-body');
+            const badge = document.getElementById('threat-count-badge');
+            
+            if (!threats || threats.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-emerald-500 font-semibold">✔ No unbanned malicious actors or repeated failure markers detected in this log.</td></tr>`;
+                badge.innerText = `0 Threats`;
+                panel.classList.remove('hidden');
+                return;
+            }
+
+            badge.innerText = `${threats.length} Actionable Threats`;
+            const srv = serversData.find(s => s.id === activeServerId);
+            const isSudo = srv && srv.isSudo !== false;
+
+            tbody.innerHTML = threats.map((t, idx) => {
+                const rowId = `threat-row-${idx}`;
+                const displayIp = maskDemoText(t.ip);
+                const isHostSelf = !!(t.isHost || (srv && (srv.host === t.ip || srv.ip === t.ip)));
+                return `
+                    <tr id="${rowId}" class="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition">
+                        <td class="px-3 py-2.5 font-bold text-slate-800 dark:text-slate-200 text-xs">${escapeHtml(displayIp)}</td>
+                        <td class="px-3 py-2.5 text-center"><span class="px-2 py-0.5 rounded font-bold text-xs bg-rose-500/10 text-rose-500 border border-rose-500/30">${t.count}</span></td>
+                        <td class="px-3 py-2.5" id="geo-cell-${idx}">
+                            <button onclick="lookupWhois('${t.ip}', 'geo-cell-${idx}')" class="px-2.5 py-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-accent hover:text-white transition text-[11px] font-semibold flex items-center space-x-1">
+                                <span>🌐</span><span>Lookup WHOIS</span>
+                            </button>
+                        </td>
+                        <td class="px-3 py-2.5 text-right whitespace-nowrap" id="action-cell-${idx}">
+                            <div class="flex items-center justify-end space-x-2">
+                                <div id="inline-status-${idx}" class="hidden text-[11px] font-bold px-2 py-0.5 rounded border transition-all"></div>
+                                ${isHostSelf ? `
+                                    <span class="px-2.5 py-1 text-xs font-semibold rounded bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed select-none" title="Host IP is protected from accidental lockout">Host Protected</span>
+                                ` : isSudo ? `
+                                    <button onclick="promptDefenseModal('${t.ip}', 'ip', ${idx})" class="px-2.5 py-1 text-[11px] font-bold rounded-[10px] bg-rose-500/10 border border-rose-500/30 text-rose-500 hover:bg-rose-500 hover:text-white transition">🛡️ Block IP</button>
+                                    <button onclick="promptDefenseModal('${t.ip}', 'subnet', ${idx})" class="px-2.5 py-1 text-[11px] font-bold rounded-[10px] bg-amber-500/10 border border-amber-500/30 text-amber-500 hover:bg-amber-500 hover:text-white transition">Block /24</button>
+                                ` : `
+                                    <div class="relative inline-block group cursor-not-allowed">
+                                        <button disabled class="px-2.5 py-1 text-[11px] font-bold rounded-[10px] bg-slate-200 dark:bg-slate-800 text-slate-400 opacity-50 pointer-events-none flex items-center space-x-1"><span>🔒</span><span>Block IP</span></button>
+                                        <div class="absolute bottom-full right-0 mb-1.5 hidden group-hover:block w-48 p-2 bg-slate-900 border border-slate-700 text-[10px] text-slate-300 rounded shadow-xl text-center z-50 pointer-events-none">This action requires the SSH user to be in the Sudoers Group.</div>
+                                    </div>
+                                    <div class="relative inline-block group cursor-not-allowed">
+                                        <button disabled class="px-2.5 py-1 text-[11px] font-bold rounded-[10px] bg-slate-200 dark:bg-slate-800 text-slate-400 opacity-50 pointer-events-none flex items-center space-x-1"><span>🔒</span><span>Block /24</span></button>
+                                        <div class="absolute bottom-full right-0 mb-1.5 hidden group-hover:block w-48 p-2 bg-slate-900 border border-slate-700 text-[10px] text-slate-300 rounded shadow-xl text-center z-50 pointer-events-none">This action requires the SSH user to be in the Sudoers Group.</div>
+                                    </div>
+                                `}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            panel.classList.remove('hidden');
+        }
+
+        function lookupWhois(ip, cellId) {
+            const cell = document.getElementById(cellId);
+            if (!cell) return;
+            cell.innerHTML = `<span class="text-[11px] text-slate-400 animate-pulse">Querying registry...</span>`;
+
+            if (whoisCache.has(ip)) {
+                renderWhoisBadge(ip, whoisCache.get(ip), cell);
+                return;
+            }
+
+            socket.emit('resolve-whois', { ip, cellId });
+        }
+
+        function handleWhoisResult({ ip, cellId, success, data }) {
+            const cell = document.getElementById(cellId);
+            if (!cell) return;
+
+            if (success && data) {
+                whoisCache.set(ip, data);
+                renderWhoisBadge(ip, data, cell);
+            } else {
+                cell.innerHTML = `<span class="text-[11px] text-slate-400">Lookup unavailable</span>`;
+            }
+        }
+
+        function renderWhoisBadge(ip, data, cell) {
+            const flag = data.country_flag || '🌐';
+            const country = data.country || 'Unknown';
+            const isp = maskDemoText(data.isp || data.org || 'Unknown Org');
+            cell.innerHTML = `
+                <div class="flex items-center space-x-2 cursor-pointer group" onclick="openWhoisModal('${ip}')" title="Click for full ASN, WHOIS & Threat Intelligence">
+                    <span class="text-base">${flag}</span>
+                    <span class="text-slate-800 dark:text-slate-200 font-semibold group-hover:text-accent transition text-xs whitespace-normal">${escapeHtml(country)} (${escapeHtml(isp)})</span>
+                </div>
+            `;
+        }
+
+        function openWhoisModal(ip) {
+            const data = whoisCache.get(ip);
+            if (!data) return;
+            const maskedIp = maskDemoText(ip);
+            document.getElementById('whois-title').innerHTML = `🌐 Threat & WHOIS Intel: <span class="text-slate-800 dark:text-white font-mono ml-2">${escapeHtml(maskedIp)}</span>`;
+            const content = document.getElementById('whois-content');
+            
+            const threat = data.threat || { score: 1, level: 'Low Threat', engine: 'Local Heuristics', confidence: 0 };
+            let pillClass = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+            let pillEmoji = '🟢';
+            if (threat.score >= 5) { pillClass = 'bg-rose-500/20 text-rose-400 border-rose-500/30'; pillEmoji = '🔴'; }
+            else if (threat.score >= 3) { pillClass = 'bg-amber-500/20 text-amber-400 border-amber-500/30'; pillEmoji = '🟡'; }
+
+            content.innerHTML = `
+                <div class="p-3.5 rounded-lg border ${pillClass} space-y-1.5 font-mono">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs uppercase font-bold tracking-wider">Threat Score Severity</span>
+                        <span class="text-xs font-bold px-2 py-0.5 rounded-full border ${pillClass}">${pillEmoji} Score ${threat.score}/5: ${escapeHtml(threat.level)}</span>
+                    </div>
+                    <div class="text-[11px] opacity-80 flex items-center justify-between pt-1 border-t border-current/20">
+                        <span>Source: <strong>${escapeHtml(threat.engine)}</strong></span>
+                        <span>Confidence: <strong>${threat.confidence}%</strong></span>
+                    </div>
+                    ${threat.totalReports !== null ? `
+                        <div class="text-[11px] opacity-80 flex items-center justify-between">
+                            <span>Total Abuse Reports: <strong>${threat.totalReports}</strong></span>
+                            <span>Last Seen: <strong>${escapeHtml(threat.lastReportedAt || 'N/A')}</strong></span>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <div class="p-4 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2 text-sm">
+                    <div><span class="text-slate-400">Country / Region:</span> <span class="font-bold text-slate-800 dark:text-slate-100">${escapeHtml(data.country || 'N/A')} ${data.country_flag || ''} (${escapeHtml(data.region || '')}${data.city ? ', ' + escapeHtml(data.city) : ''})</span></div>
+                    <div><span class="text-slate-400">ISP / Carrier:</span> <span class="text-accent font-semibold">${escapeHtml(maskDemoText(data.isp || 'N/A'))}</span></div>
+                    <div><span class="text-slate-400">Organization:</span> <span class="text-slate-800 dark:text-slate-200">${escapeHtml(maskDemoText(data.org || 'N/A'))}</span></div>
+                    <div><span class="text-slate-400">ASN Identifier:</span> <span class="text-slate-800 dark:text-slate-200 font-mono">${escapeHtml(data.asn || 'N/A')}</span></div>
+                    <div><span class="text-slate-400">Infrastructure Type:</span> <span class="text-slate-800 dark:text-slate-200 font-mono">${escapeHtml(threat.usageType || 'N/A')}</span></div>
+                    <div><span class="text-slate-400">Queried Host / Range:</span> <span class="text-slate-800 dark:text-slate-200 font-mono">${escapeHtml(maskedIp)}</span></div>
+                </div>
+            `;
+            document.getElementById('whois-modal').classList.remove('hidden');
+        }
+
+        function closeWhoisModal() { document.getElementById('whois-modal').classList.add('hidden'); }
+
+        function promptDefenseModal(ip, mode, rowIndex) {
+            pendingDefense = { ip, mode, rowIndex };
+            const displayTarget = maskDemoText(ip);
+            const targetLabel = mode === 'subnet' ? `${displayTarget.split('.').slice(0,3).join('.')}.0/24 (Full /24 Subnet)` : `${displayTarget} (Single Host)`;
+            document.getElementById('defense-target-ip').innerText = targetLabel;
+            document.getElementById('defense-target-mode').innerText = mode === 'subnet' ? 'Class C Subnet CIDR Drop' : 'Single IPv4 Ban Drop';
+            
+            const whois = whoisCache.get(ip);
+            const previewEl = document.getElementById('defense-whois-preview');
+            if (whois) {
+                previewEl.innerHTML = `<span>Origin:</span> <strong class="text-slate-700 dark:text-slate-200">${escapeHtml(whois.country)}</strong> &bull; <span>ISP:</span> <strong class="text-slate-700 dark:text-slate-200">${escapeHtml(maskDemoText(whois.isp))}</strong>`;
+                previewEl.classList.remove('hidden');
+            } else {
+                previewEl.classList.add('hidden');
+            }
+
+            document.getElementById('defense-modal').classList.remove('hidden');
+        }
+
+        function closeDefenseModal() { 
+            document.getElementById('defense-modal').classList.add('hidden'); 
+            pendingDefense = { ip: null, mode: null, rowIndex: null };
+        }
+
+        function submitDefenseAction() {
+            if (!pendingDefense.ip) return;
+            const { ip, mode, rowIndex } = pendingDefense;
+            const whois = whoisCache.get(ip) || {};
+            const threat = whois.threat || {};
+            
+            const btn = document.getElementById('btn-confirm-defense');
+            btn.innerHTML = `<span class="animate-spin mr-1">⚙️</span> <span>Applying Ban...</span>`;
+            btn.disabled = true;
+
+            socket.emit('block-threat', { 
+                ip, 
+                mode, 
+                rowIndex,
+                countryCode: whois.country_code || 'XX',
+                countryName: whois.country || 'Unknown',
+                score: threat.score || 3,
+                severity: threat.level || 'Manual Threat Ban'
+            });
+        }
+
+        function handleBlockThreatResult({ success, ip, targetBlock, rowIndex, engine, message }) {
+            const btn = document.getElementById('btn-confirm-defense');
+            btn.innerHTML = `<span>Confirm Block</span>`;
+            btn.disabled = false;
+            closeDefenseModal();
+
+            const inlineEl = document.getElementById(`inline-status-${rowIndex}`);
+            const targetRow = document.getElementById(`threat-row-${rowIndex}`);
+
+            if (inlineEl) {
+                if (success) {
+                    inlineEl.className = 'text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1';
+                    inlineEl.innerHTML = `<span>✔</span> <span>${escapeHtml(engine || 'Banned')}</span>`;
+                    inlineEl.classList.remove('hidden');
+
+                    if (targetRow) {
+                        setTimeout(() => {
+                            targetRow.style.transition = 'opacity 0.4s ease-out';
+                            targetRow.style.opacity = '0';
+                            setTimeout(() => {
+                                targetRow.remove();
+                                const rowsRemaining = document.querySelectorAll('#threat-table-body tr').length;
+                                document.getElementById('threat-count-badge').innerText = `${rowsRemaining} Actionable Threats`;
+                            }, 400);
+                        }, 1200);
+                    }
+                } else {
+                    inlineEl.className = 'text-[11px] font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center space-x-1';
+                    inlineEl.innerHTML = `<span>❌</span> <span>Error</span>`;
+                    inlineEl.title = message;
+                    inlineEl.classList.remove('hidden');
+                    showToast(`Failed to block ${maskDemoText(targetBlock)}: ${message}`, 'error');
+                }
+            }
+        }
 
         function renderDockerGrid() {
             const grid = document.getElementById('docker-grid');
@@ -625,8 +1417,8 @@
 
             grid.innerHTML = sortedData.map(p => `
                 <tr class="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                    <td class="px-4 py-3"><div class="flex items-center space-x-3"><div class="w-2.5 h-2.5 rounded-full ${p.State === 'running' ? 'bg-emerald-500' : 'bg-slate-500'} shrink-0 shadow-sm"></div><div><div class="font-bold text-slate-800 dark:text-slate-200">${escapeHtml(p.Names)}</div><div class="text-xs opacity-70">${escapeHtml(p.Status)}</div></div></div></td>
-                    <td class="px-4 py-3 font-mono text-xs opacity-80">${escapeHtml(p.Image)}</td>
+                    <td class="px-4 py-3"><div class="flex items-center space-x-3"><div class="w-2.5 h-2.5 rounded-full ${p.State === 'running' ? 'bg-emerald-500' : 'bg-slate-500'} shrink-0 shadow-sm"></div><div><div class="font-bold text-slate-800 dark:text-slate-200">${escapeHtml(maskDemoText(p.Names))}</div><div class="text-xs opacity-70">${escapeHtml(maskDemoText(p.Status))}</div></div></div></td>
+                    <td class="px-4 py-3 font-mono text-xs opacity-80">${escapeHtml(maskDemoText(p.Image))}</td>
                     <td class="px-4 py-3 text-center"><div class="text-xs font-bold text-slate-700 dark:text-slate-300">${p.CPUPerc}</div><div class="text-[10px] opacity-70">${p.MemUsage}</div></td>
                     <td class="px-4 py-3 text-right whitespace-nowrap"><div class="flex items-center justify-end space-x-1.5">
                         <button data-action="start" data-container="${escapeHtml(p.Names)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 hover:bg-emerald-500 hover:text-white transition"><svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path></svg></button>
@@ -641,11 +1433,11 @@
                     </div></td>
                 </tr>
             `).join('');
-            grid.querySelectorAll('.docker-btn').forEach(btn => btn.addEventListener('click', () => { const a = btn.dataset.action, c = btn.dataset.container, i = btn.dataset.image; if (a === 'console') execDocker(c); else if (a === 'logs') viewLogs(c); else if (a === 'scan') scanDocker(i); else if (a === 'remove') { if(confirm(`Force Stop & Remove ${c}?`)) socket.emit('docker-action', { action: a, container: c }); } else socket.emit('docker-action', { action: a, container: c }); }));
+            grid.querySelectorAll('.docker-btn').forEach(btn => btn.addEventListener('click', () => { const a = btn.dataset.action, c = btn.dataset.container, i = btn.dataset.image; if (a === 'console') execDocker(c); else if (a === 'logs') viewLogs(c); else if (a === 'scan') scanDocker(i); else if (a === 'remove') { socket.emit('docker-action', { action: a, container: c }); } else socket.emit('docker-action', { action: a, container: c }); }));
         }
 
-        function viewLogs(c) { document.getElementById('diag-title').innerText = `Logs: ${c}`; document.getElementById('diagnostics-modal').classList.remove('hidden'); modalTerm.clear(); setTimeout(() => { try { modalFitAddon.fit(); } catch(e){} }, 150); socket.emit('docker-logs', { container: c }); }
-        function scanDocker(i) { document.getElementById('diag-title').innerText = `Grype Scan: ${i}`; document.getElementById('diagnostics-modal').classList.remove('hidden'); modalTerm.clear(); setTimeout(() => { try { modalFitAddon.fit(); } catch(e){} }, 150); socket.emit('docker-scan', { image: i }); }
+        function viewLogs(c) { document.getElementById('diag-title').innerText = `Logs: ${maskDemoText(c)}`; document.getElementById('diagnostics-modal').classList.remove('hidden'); modalTerm.clear(); setTimeout(() => { try { modalFitAddon.fit(); } catch(e){} }, 150); socket.emit('docker-logs', { container: c }); }
+        function scanDocker(i) { document.getElementById('diag-title').innerText = `Grype Scan: ${maskDemoText(i)}`; document.getElementById('diagnostics-modal').classList.remove('hidden'); modalTerm.clear(); setTimeout(() => { try { modalFitAddon.fit(); } catch(e){} }, 150); socket.emit('docker-scan', { image: i }); }
         function closeDiagnostics() { document.getElementById('diagnostics-modal').classList.add('hidden'); }
         function execDocker(c) { switchTab('terminal'); socket.emit('terminal-input', `docker exec -it ${c} /bin/bash || docker exec -it ${c} /bin/sh\r`); term.focus(); }
 
@@ -665,7 +1457,7 @@
             const list = document.getElementById('server-list');
             list.innerHTML = serversData.map(s => `
                 <div data-id="${s.id}" class="server-item p-2.5 rounded-lg border-b border-slate-200 dark:border-slate-800/60 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition flex justify-between items-center group mb-1">
-                    <span class="text-sm font-medium truncate pr-2 pointer-events-none">${escapeHtml(s.name)}</span>
+                    <span class="text-sm font-medium truncate pr-2 pointer-events-none">${escapeHtml(maskDemoText(s.name))}</span>
                     <div class="flex items-center space-x-2 shrink-0 pointer-events-none">
                         <span id="ind-${s.id}" class="srv-indicator hidden origin-center text-[9px] font-bold uppercase tracking-widest bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full shadow-sm">CONNECTED</span>
                         <button data-id="${s.id}" class="edit-server-btn pointer-events-auto opacity-0 group-hover:opacity-100 transition text-slate-400 hover:text-accent focus:outline-none"><svg class="w-3.5 h-3.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
@@ -676,7 +1468,7 @@
         }
 
         function updateCloneDropdowns() {
-            const h = '<option value="">-- Import From --</option>' + serversData.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+            const h = '<option value="">-- Import From --</option>' + serversData.map(s => `<option value="${s.id}">${escapeHtml(maskDemoText(s.name))}</option>`).join('');
             document.getElementById('macro-clone-select').innerHTML = h; document.getElementById('log-clone-select').innerHTML = h;
         }
 
@@ -685,8 +1477,8 @@
 
         function connectServer(id) {
             const srv = serversData.find(s => s.id === id); activeServerId = srv.id;
-            document.getElementById('telemetry-bar').classList.add('hidden'); document.getElementById('stat-cpu').innerText = '--'; document.getElementById('stat-ram').innerText = '--'; document.getElementById('stat-ip').innerText = '--';
-            document.getElementById('header-title').innerText = srv.name; document.getElementById('tabs').classList.remove('hidden');
+            document.getElementById('telemetry-bar').classList.add('hidden'); document.getElementById('stat-cpu').innerText = '--'; document.getElementById('stat-ram').innerText = '--';
+            document.getElementById('header-title').innerText = maskDemoText(srv.name); document.getElementById('tabs').classList.remove('hidden');
             
             updateNmapDropdown(srv.id);
 
@@ -704,7 +1496,7 @@
             document.getElementById('macro-buttons').innerHTML = (srv.macros || []).map(m => `<button data-cmd="${btoa(m.cmd)}" data-auto="${m.auto}" class="macro-trigger-btn whitespace-nowrap px-3 py-1.5 text-xs font-semibold rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700">${escapeHtml(m.label)}</button>`).join('');
             document.getElementById('macro-buttons').querySelectorAll('.macro-trigger-btn').forEach(btn => btn.addEventListener('click', () => { const cmd = atob(btn.dataset.cmd); socket.emit('terminal-input', btn.dataset.auto === 'true' ? cmd + '\r' : cmd); switchTab('terminal'); term.focus(); }));
 
-            switchTab('terminal'); try { fitAddon.fit(); } catch(e) {} term.clear(); term.writeln(`Connecting to ${escapeHtml(srv.host)}...\r\n`);
+            switchTab('terminal'); try { fitAddon.fit(); } catch(e) {} term.clear(); term.writeln(`Connecting to ${escapeHtml(maskDemoText(srv.host))}...\r\n`);
             socket.emit('connect-ssh', { ...srv, cols: term.cols || 80, rows: term.rows || 24 });
         }
 
@@ -713,6 +1505,7 @@
             ['name','host','key-custom','passphrase'].forEach(id => document.getElementById('frm-'+id).value = '');
             document.getElementById('frm-port').value = '22'; document.getElementById('frm-user').value = 'root'; document.getElementById('frm-key-type').value = '/root/.ssh/id_ed25519'; document.getElementById('frm-key-custom').classList.add('hidden');
             ['docker','logs','security'].forEach(id => document.getElementById('frm-'+id).checked = true);
+            document.getElementById('frm-sudo').checked = true;
             document.getElementById('frm-auth-method').checked = false; toggleAuthMethod();
             document.getElementById('macro-builder').innerHTML = ''; document.getElementById('log-builder').innerHTML = ''; document.getElementById('delete-server-btn').classList.add('hidden');
             ['terminal', 'files', 'docker', 'logs', 'security'].forEach(t => document.getElementById('view-'+t).classList.add('hidden')); document.getElementById('tabs').classList.add('hidden');
@@ -728,6 +1521,7 @@
             if (['/root/.ssh/id_ed25519', '/root/.ssh/id_rsa', '/root/.ssh/id_ecdsa'].includes(kp)) { document.getElementById('frm-key-type').value = kp; document.getElementById('frm-key-custom').classList.add('hidden'); } else { document.getElementById('frm-key-type').value = 'custom'; document.getElementById('frm-key-custom').value = kp; document.getElementById('frm-key-custom').classList.remove('hidden'); }
             document.getElementById('frm-passphrase').value = '';
             document.getElementById('frm-docker').checked = srv.dockerEnabled !== false; document.getElementById('frm-logs').checked = srv.logsEnabled !== false; document.getElementById('frm-security').checked = srv.securityEnabled !== false;
+            document.getElementById('frm-sudo').checked = srv.isSudo !== false;
             document.getElementById('frm-auth-method').checked = srv.authMethod === 'password'; toggleAuthMethod();
             document.getElementById('macro-builder').innerHTML = ''; (srv.macros || []).forEach(m => addMacroRow(m.label, m.cmd, m.auto));
             document.getElementById('log-builder').innerHTML = ''; (srv.customLogs || []).forEach(l => addLogPathRow(l.label, l.type || 'file', l.path));
@@ -736,7 +1530,12 @@
             document.getElementById('form-header-title').innerText = "Edit Server"; document.getElementById('header-title').innerText = "Configuration"; document.getElementById('macro-buttons').innerHTML = '';
         }
 
-        function deleteServer() { const srv = serversData.find(s => s.id === editingServerId); if (confirm(`⚠️ DELETE SERVER ⚠️\n\nDelete "${srv ? srv.name : 'this server'}"?`)) { socket.emit('delete-server', editingServerId); document.getElementById('view-add-server').classList.add('hidden'); switchTab('terminal'); } }
+        function deleteServer() { 
+            socket.emit('delete-server', editingServerId); 
+            document.getElementById('view-add-server').classList.add('hidden'); 
+            showToast('Server configuration removed.');
+            switchTab('terminal'); 
+        }
 
         function addMacroRow(label = '', cmd = '', auto = true) {
             const div = document.createElement('div'); div.className = "flex space-x-2 macro-row items-center";
@@ -752,15 +1551,18 @@
         }
 
         function moveMacroUp(el) { const row = el.closest ? el.closest('.macro-row') || el.closest('.log-row') : el.parentElement.parentElement.parentElement; if (row && row.previousElementSibling) row.parentElement.insertBefore(row, row.previousElementSibling); }
-        function moveMacroDown(el) { const row = el.closest ? el.closest('.macro-row') || el.closest('.log-row') : el.parentElement.parentElement.parentElement; if (row && row.nextElementSibling) row.parentElement.insertBefore(row.nextElementSibling, row); }
+        function moveMacroDown(el) { const row = el.closest ? el.closest('.macro-row') || el.closest('.log-row') : el.parentElement.parentElement.parentElement; if (row && row.nextElementSibling) row.parentElement.insertBefore(row, row.nextElementSibling); }
 
         function saveServer() {
             const macros = Array.from(document.querySelectorAll('.macro-row')).map(r => ({ label: r.querySelector('.m-label').value, cmd: r.querySelector('.m-cmd').value, auto: r.querySelector('.m-auto').checked })).filter(m => m.label && m.cmd);
             const customLogs = Array.from(document.querySelectorAll('.log-row')).map(r => ({ label: r.querySelector('.l-label').value, type: r.querySelector('.l-type').value, path: r.querySelector('.l-path').value })).filter(l => l.label && l.path);
             let finalKeyPath = document.getElementById('frm-key-type').value; if (finalKeyPath === 'custom') finalKeyPath = document.getElementById('frm-key-custom').value;
             const authMethod = document.getElementById('frm-auth-method').checked ? 'password' : 'key';
-            socket.emit('save-server', { id: editingServerId, name: document.getElementById('frm-name').value, host: document.getElementById('frm-host').value, port: document.getElementById('frm-port').value, username: document.getElementById('frm-user').value, privateKeyPath: finalKeyPath, passphrase: document.getElementById('frm-passphrase').value, authMethod, dockerEnabled: document.getElementById('frm-docker').checked, logsEnabled: document.getElementById('frm-logs').checked, securityEnabled: document.getElementById('frm-security').checked, macros, customLogs });
-            document.getElementById('view-add-server').classList.add('hidden'); switchTab('terminal');
+            const isSudo = document.getElementById('frm-sudo').checked;
+            socket.emit('save-server', { id: editingServerId, name: document.getElementById('frm-name').value, host: document.getElementById('frm-host').value, port: document.getElementById('frm-port').value, username: document.getElementById('frm-user').value, privateKeyPath: finalKeyPath, passphrase: document.getElementById('frm-passphrase').value, authMethod, isSudo, dockerEnabled: document.getElementById('frm-docker').checked, logsEnabled: document.getElementById('frm-logs').checked, securityEnabled: document.getElementById('frm-security').checked, macros, customLogs });
+            document.getElementById('view-add-server').classList.add('hidden'); 
+            showToast('Server configuration saved.');
+            switchTab('terminal'); 
         }
 
         function renderSftpGrid(data) {
