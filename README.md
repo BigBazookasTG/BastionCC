@@ -56,18 +56,13 @@
 
 ## Installation
 
-### There are several options for installation:
-
-### **Clone the .sh file**
-
-The following will create the whole application structure in a folder called server-management. You can then build the docker locally and deploy on your laptop
-
-### **Pull the latest docker image**
+**Pull the latest docker image**
 
 ~~~
-Save the dockerfile to your preffered location. Double check the file points to the latest version.
+Save the docker-compose.yml file to your preferred location. Double check the file points to the latest version shown in packages.
 Edit your PubKey SSH Path
 Docker Compose up
+visit localhost:3000 or 127.0.0.1:3000
 ~~~
 
 
