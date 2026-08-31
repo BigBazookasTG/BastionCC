@@ -112,9 +112,3 @@ Version 4+ Security review and patch implementation
 
 ~~~
 
-
-
-
-~~~
-docker buildx build --platform linux/amd64,linux/arm64 -t repo.mb-assist.uk/bigbazookas/servermonitor:v4.4 --push .
-~~~
