@@ -1,0 +1,403 @@
+[
+  {
+    "version": "v1.8.6",
+    "badge": "CURRENT RELEASE",
+    "borderColor": "border-emerald-500",
+    "title": "Syslog Streamer Modernization, PIN Modal Fix & 5-Domain Deep Audit",
+    "changes": [
+      {
+        "tag": "BUG FIX",
+        "text": "PIN Reset Modal: Bound openPinReset and closePinReset to the global window scope, fully restoring modal functionality."
+      },
+      {
+        "tag": "CORE",
+        "text": "Syslog Streamer Modernization: Upgraded Syslog streaming and deep threat triage to unfiltered journalctl (-n 500 / -n 10000) with legacy /var/log fallbacks."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "5-Domain Deep Audits: Expanded target capacity back to 5 concurrent domains for SSL/TLS and HTTP header audit reports."
+      },
+      {
+        "tag": "CORE",
+        "text": "Version Bump & Telemetry Sync: Updated application metadata, package schemas, and build telemetry to v1.8.6."
+      }
+    ]
+  },
+  {
+    "version": "v1.8.5",
+    "borderColor": "border-slate-600",
+    "title": "Critical Security Hardening & Remote Command Confinement",
+    "changes": [
+      {
+        "tag": "SECURITY",
+        "text": "Remote Shell Injection Defense: Enforced strict parameter allowlisting (['ip', 'subnet']) on threat defense execution pipelines, eliminating remote shell injection vectors."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Unified Key Path Confinement: Extracted a centralized key path validator (isValidKeyPath) enforcing strict directory boundaries across SSH connections, Nmap pivots, Deep Batch pivots, and server save routines."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Self-Lockout DNS Resolution: Implemented backend host IP discovery via dns.promises.lookup to accurately identify and protect host WAN addresses from accidental bans."
+      },
+      {
+        "tag": "CORE",
+        "text": "Version Bump & Telemetry Sync: Synchronized application metadata, package schemas, and attribution links to v1.8.5."
+      }
+    ]
+  },
+  {
+    "version": "v1.8.0 – v1.8.4",
+    "borderColor": "border-slate-600",
+    "title": "Self-Lockout Shield, Triage Context Guidance & Themed UI Enhancements",
+    "changes": [
+      {
+        "tag": "SECURITY",
+        "text": "Self-Lockout Protection: Client-side guard automatically disables block actions on host addresses with a 'Host Protected' badge."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Threat Triage Context: Added clear subtext explaining deep 10,000-line reverse proxy error log inspection."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Themed Scrollbars & Grep Clarity: Integrated slim 6px dark-mode scrollbars with orange hover accents and updated grep buffer placeholders."
+      },
+      {
+        "tag": "CORE",
+        "text": "Version Bump & Metadata Sync: Upgraded dashboard build metadata and telemetry schemas."
+      }
+    ]
+  },
+  {
+    "version": "v1.7.9",
+    "borderColor": "border-slate-600",
+    "title": "Log Grep Buffer Clarity & Themed Scrollbars",
+    "changes": [
+      {
+        "tag": "SECURITY",
+        "text": "Host IP Threat Auto-Suppression: Auto-discovers server interface IPs (hostname -I) and resolves hostnames to filter self-referencing IPs from threat triage queues."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Log Grep Buffer Clarity: Updated live log search placeholder to 'Grep (last 500 lines)...' to distinguish live buffer from deep scans."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Custom Themed Scrollbars: Implemented slim 6px dark-mode scrollbars with signature orange hover accents across all panels and modals."
+      },
+      {
+        "tag": "CORE",
+        "text": "Version Bump & Metadata Sync: Synchronized system metadata, changelog archive, and telemetry build scripts to v1.8.0."
+      }
+    ]
+  },
+  {
+    "version": "v1.7.8",
+    "borderColor": "border-slate-600",
+    "title": "Sidebar Navigation Refinement & Security Action Isolation",
+    "changes": [
+      {
+        "tag": "UI / UX",
+        "text": "Sidebar Action Reordering: Grouped Demo Mode directly with AbuseIPDB key configuration."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Security Action Isolation: Added a divider separator and positioned Change PIN directly above Emergency Lock."
+      },
+      {
+        "tag": "CORE",
+        "text": "Version Bump & Metadata Sync: Synchronized changelog and system metadata across all layers to v1.8.0."
+      }
+    ]
+  },
+  {
+    "version": "v1.7.7",
+    "borderColor": "border-slate-600",
+    "title": "Two-Column Tagged Changelog Grid & Streamlined Navigation",
+    "changes": [
+      {
+        "tag": "UI / UX",
+        "text": "Two-Column Changelog Layout: Implemented a fixed-width 76px column grid for categorization badges, providing perfectly left-aligned changelog descriptions."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Expanded Release Drawer: Widened the slide-out history panel to max-w-xl to allow comfortable reading space for multi-line release items."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Streamlined Navigation: Reordered sidebar actions (Config -> AbuseIPDB -> Change PIN -> Demo Mode -> Emergency Lock) and decommissioned redundant Logout button."
+      },
+      {
+        "tag": "CORE",
+        "text": "Updated Footer Attribution: Formatted custom branding and positioned the version link directly beneath."
+      }
+    ]
+  },
+  {
+    "version": "v1.7.6",
+    "borderColor": "border-slate-600",
+    "title": "Deterministic Demo Mode & Real-Time Text Obfuscation Engine",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Deterministic Demo Mode: Added an on-the-fly privacy mode that intercepts logs, threat queues, security audits, and modals to mask IPv4 addresses and domains into clean, realistic mock data."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Video-Ready Privacy Toggle: Instant UI switch with persistent state and an on-screen status badge, avoiding messy video blur artifacts."
+      },
+      {
+        "tag": "CORE",
+        "text": "Client-Side Zero-Leak Pipeline: Sanitizes live xterm.js log streams and diagnostics output without modifying underlying backend state or defense execution."
+      }
+    ]
+  },
+  {
+    "version": "v1.7.5",
+    "borderColor": "border-slate-600",
+    "title": "Server-Side CPU Delta Calculation Engine & Tagged Changelogs",
+    "changes": [
+      {
+        "tag": "CORE",
+        "text": "Server-Side CPU Calculation: Offloaded CPU delta parsing to Node.js backend memory cache, computing accurate 5-second interval ticks from /proc/stat."
+      },
+      {
+        "tag": "BUG FIX",
+        "text": "Eliminated --% Gauge Bug: Fixed subshell arithmetic parsing errors on minimal Linux distributions and kernel virtualization layers."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Inline Changelog Tags: Restored color-coded category badges ([SECURITY], [FEATURE], [BUG FIX], [UI / UX], [CORE]) across the release history."
+      },
+      {
+        "tag": "CORE",
+        "text": "Static Asset Immunity: Confirmed public/changelog.json serves release history reliably without interference from host volume mounts."
+      }
+    ]
+  },
+  {
+    "version": "v1.7.4",
+    "borderColor": "border-slate-600",
+    "title": "Static Public Changelog & Telemetry Refactoring",
+    "changes": [
+      {
+        "tag": "CORE",
+        "text": "Static Public Changelog: Migrated changelog storage to public/changelog.json to ensure Docker volume mounts never mask the release history drawer."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Dynamic Header Telemetry: Polling multi-metric memory (Used / Total, Free, Cache) with responsive gauge formatting."
+      }
+    ]
+  },
+  {
+    "version": "v1.7.3",
+    "borderColor": "border-slate-600",
+    "title": "Decoupled JSON Changelog, Advanced RAM Telemetry & Deep Scan Hardening",
+    "changes": [
+      {
+        "tag": "CORE",
+        "text": "Decoupled Release Archive: Migrated full changelog history from HTML into a standalone data schema with dynamic loading."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Comprehensive RAM Telemetry: Expanded memory monitoring to show Total, Used, Cached, and Free memory metrics."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Deep Scan Firewall Timeout: Hardened Step 2 (Firewall Subsystem) with strict non-blocking timeouts to prevent infinite SSH pipe hangs."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Interactive Vector Map Tooltips: Fully resolved marker hover cards showing ISO country name, total bans, and severity tier distribution."
+      }
+    ]
+  },
+  {
+    "version": "v1.7.2",
+    "borderColor": "border-slate-600",
+    "title": "Banned IPs Report Integration & Streamlined Architecture",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Deep Audit Banned IPs Section: Added dedicated Section 4 to Deep Batch HTML exports containing the complete history of manual bans, country origins, defense engines, and severity ratings."
+      },
+      {
+        "tag": "CORE",
+        "text": "Decommissioned Rootkit Scanners: Fully removed rkhunter and chkrootkit from backend commands and frontend UI to guarantee 100% non-blocking terminal execution."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Refined UI Styling: Cleaned 1px orange transparent border for the Threats By Country button without emoji prefixes."
+      }
+    ]
+  },
+  {
+    "version": "v1.7.0 – v1.7.1",
+    "borderColor": "border-slate-600",
+    "title": "Threats By Country Map & Universal Multi-Engine Firewall Adapter",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Threats By Country Visual Map: Interactive vector map rendering tiered density markers (Green 1-15, Orange 16-50, Purple 51+)."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Universal Multi-Engine Firewall Adapter: Dynamically detects and adapts commands across UFW, Firewalld, Nftables, and native Iptables."
+      },
+      {
+        "tag": "CORE",
+        "text": "Nmap Attribution: Integrated mandatory Nmap Project licensing credits across web dashboards and exported reports."
+      }
+    ]
+  },
+  {
+    "version": "v1.6.0 – v1.6.8",
+    "borderColor": "border-slate-600",
+    "title": "Hybrid Threat Severity Scoring & Server-Side WHOIS Relay",
+    "changes": [
+      {
+        "tag": "SECURITY",
+        "text": "Hybrid 1–5 scoring engine pairing AbuseIPDB with zero-key local heuristics."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Server-side WHOIS relay eliminating CORS and client-side adblocker issues."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "3-Engine ban deduplication across CrowdSec, Fail2ban, and UFW with inline row feedback."
+      }
+    ]
+  },
+  {
+    "version": "v1.5.0",
+    "borderColor": "border-sky-500",
+    "title": "Hub-and-Spoke Auditing, Web Header Policy Matrix & Multi-Server Pivots",
+    "changes": [
+      {
+        "tag": "SECURITY",
+        "text": "Cross-server hub-and-spoke Nmap auditing through remote pivot nodes."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "HTTP security header matrix grading with missing policy recommendations."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "SSL/TLS certificate expiration detection and domain triage."
+      }
+    ]
+  },
+  {
+    "version": "v1.4.0",
+    "borderColor": "border-indigo-500",
+    "title": "Live Docker Telemetry, Container Controls & Vulnerability Scanner",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Live streaming of Docker container statuses, memory footprint, and CPU load."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Integrated Grype container image vulnerability scanner modal."
+      },
+      {
+        "tag": "CORE",
+        "text": "Container lifecycle actions (start, stop, restart, attach shell, view logs, destroy)."
+      }
+    ]
+  },
+  {
+    "version": "v1.3.0",
+    "borderColor": "border-emerald-500",
+    "title": "Full Remote File Explorer, Chunked Stream Uploads & Downloads",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Dual-pane SFTP file browser with directory tree traversal."
+      },
+      {
+        "tag": "CORE",
+        "text": "64KB chunked binary streaming for seamless uploads and downloads."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Drag-and-drop file upload target zone."
+      }
+    ]
+  },
+  {
+    "version": "v1.2.0",
+    "borderColor": "border-amber-500",
+    "title": "Interactive Xterm.js Shell & Configurable Macro Automation",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Full Xterm.js terminal integration with window resize synchronization."
+      },
+      {
+        "tag": "CORE",
+        "text": "Custom quick-action macro builder with auto-execution flags and drag-reordering."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Multi-log viewer supporting systemd journalctl, files, and wildcard folders."
+      }
+    ]
+  },
+  {
+    "version": "v1.1.0",
+    "borderColor": "border-rose-500",
+    "title": "AES-256-GCM Vault Encryption, Path Traversal Defense & Emergency Lock",
+    "changes": [
+      {
+        "tag": "SECURITY",
+        "text": "Master PIN scrypt key derivation and AES-256-GCM authenticated vault storage."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Emergency Lock panic trigger to instantly purge decrypters and disconnect all sessions."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Path traversal guards restricting SSH key access strictly to allowed directories."
+      }
+    ]
+  },
+  {
+    "version": "v1.0.0",
+    "borderColor": "border-slate-500",
+    "title": "Initial Production Release: Multi-Server Linux Dashboard",
+    "changes": [
+      {
+        "tag": "CORE",
+        "text": "Multi-server fleet management supporting password, SSH key, and TOTP authentication."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Live host resource monitoring (CPU, RAM, and network IPs)."
+      },
+      {
+        "tag": "CORE",
+        "text": "Centralized configuration export and import routines."
+      }
+    ]
+  },
+  {
+    "version": "v0.3.0 – v0.9.0",
+    "borderColor": "border-slate-700",
+    "title": "Host Telemetry & Systemd Log Streaming Prototype",
+    "changes": [
+      {
+        "tag": "CORE",
+        "text": "Early prototype streaming systemd journal output and system metrics over WebSockets."
+      },
+      {
+        "tag": "CORE",
+        "text": "Foundational SSH connection multiplexer."
+      }
+    ]
+  }
+]
