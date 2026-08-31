@@ -25,7 +25,7 @@
   ![picture](/images/dockermanager.png)
   
 ### Create "Macros" i.e command shortcuts you may use often, these will appear above the xterm terminal window and import Macro templates from your other servers to save having to recreate
-  ![picture](/images/quickcommands.png)
+  ![picture](/images/quickcommandsbcc.png)
   
 ### Add logs you would like to monitor, these appear as buttons in the log viewer page and you can add 3 types:
     * Files (direct links to files)
@@ -33,7 +33,7 @@
     * Systemd / Journalctl (Enter the term you would like to isolate i.e UFW)
     * Clone preset logs to other servers
     
-  ![picture](/images/addlogs.png)
+  ![picture](/images/quickcommandsbcc.png)
   
 ### Log viewer
 
