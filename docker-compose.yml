@@ -1,0 +1,19 @@
+services:
+  dashboard:
+    image: ghcr.io/bigbazookastg/bastioncc:v1.8.6  
+    container_name: server-dashboard
+    restart: no
+    ports:
+      # Bound strictly to 127.0.0.1 so it is not exposed on your local Wi-Fi network
+      - "127.0.0.1:${PORT:-3000}:3000"
+    environment:
+      #- SAFETY_OFFICER_PIN=${SAFETY_OFFICER_PIN}
+      # Automatically generates a random JWT secret on each container start if not provided
+      - JWT_SECRET=${JWT_SECRET:-}
+    volumes:
+      # Persists your server list and macros
+      - ./data:/app/data
+      # Mounts your local SSH keys read-only for seamless authentication
+      - /path/to/ssh/folder/.ssh:/root/.ssh:ro #<<<<<<<<<<<<<<<CHANGE ME
+#      - ./public:/app/public
+#      - ./server:/app/server
