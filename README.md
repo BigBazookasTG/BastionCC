@@ -79,7 +79,7 @@ Docker Compose up
 
 ## Security Approach
 
-## The code is here for all to see, whislt i do scan with various AI engines, they are not 100%, so cast your eye over the code.
+## The code is here for all to see, I am no code or security expert and do not pretend to be, so cast your eye over the code and judge for yourself
 
 ### The .SH file is being audited by both Claude and Gemini AI Pro each major version for weaknesses, then the measures to circumvent are implemented to mitigate possible risks, however it should be noted i am deploying on my laptop locally, i would not recommend deploying as a cloud based tool.
 
