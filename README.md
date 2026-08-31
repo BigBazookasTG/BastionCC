@@ -38,6 +38,12 @@
 ### Log viewer
 
   ![picture](/images/logviewer.png)
+
+  Includes the following security audits:
+
+  * WHOIS Lookup
+  * Threat Detection Score (Local or via AbuseIPDB)
+  * Ban Actions (Single IP or /24) Via Crowdsec > Fail2ban > Firewall
   
 ### SFTP file management with drag and drop ability to transfer files.
     
@@ -56,23 +62,11 @@
 
 The following will create the whole application structure in a folder called server-management. You can then build the docker locally and deploy on your laptop
 
-~~~
-Save the .sh file to your desired location
-chmod +x servermon.sh
-cd server-dashboard 
-Build your docker locally or push to your repo i.e docker buildx build --platform linux/amd64,linux/arm64 -t my.repo.uk/username/servermonitor:v4.4 --push .
-Create the docker compose file based on example here
-Change the version number to the latest release in the compose file
-Docker compose up
-visit localhost:3000 / 127.0.0.1:3000
-
-On first install you will set a master password.
-~~~
-
 ### **Pull the latest docker image**
 
 ~~~
 Save the dockerfile to your preffered location. Double check the file points to the latest version.
+Edit your PubKey SSH Path
 Docker Compose up
 ~~~
 
