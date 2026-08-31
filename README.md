@@ -68,7 +68,7 @@ visit localhost:3000 or 127.0.0.1:3000
 
 ## Security Approach
 
-## The code is here for all to see, I am no code or security expert and do not pretend to be, so cast your eye over the code and judge for yourself
+### The code is here for all to see, I am no code or security expert and do not pretend to be, so cast your eye over the code and judge for yourself
 
 The build.SH file is audited by both Claude and Gemini AI  each major version for weaknesses, then the measures to circumvent are implemented to mitigate possible risks, however it should be noted i am deploying on my laptop locally, i would not recommend deploying as a cloud based tool.
 
