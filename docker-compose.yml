@@ -9,7 +9,10 @@ services:
     environment:
       #- SAFETY_OFFICER_PIN=${SAFETY_OFFICER_PIN}
       # Automatically generates a random JWT secret on each container start if not provided
-      - JWT_SECRET=${JWT_SECRET:-}
+      - JWT_SECRET=${JWT_SECRET:-}      
+      - RATE_LIMIT_ENABLED=false # Set to False if using on a localhost docker setup i.e your laptop / desktop, if you plan to host behind proxy on cloud infra set to true
+      - TRUST_PROXY=false # Set to False if using on a localhost docker setup i.e your laptop / desktop, if you plan to host behind proxy on cloud infra set to true
+      
     volumes:
       # Persists your server list and macros
       - ./data:/app/data
