@@ -15,5 +15,3 @@ services:
       - ./data:/app/data
       # Mounts your local SSH keys read-only for seamless authentication
       - /path/to/ssh/folder/.ssh:/root/.ssh:ro #<<<<<<<<<<<<<<<CHANGE ME
-#      - ./public:/app/public
-#      - ./server:/app/server
