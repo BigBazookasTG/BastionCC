@@ -8,6 +8,8 @@
 
 ### The tool is perfect if you manage many VM's, LXC, cloud compute etc and would like to consolidate them all into one place with lightweight yet powerful features built in.
 
+### Full documentation can be found here > https://docs.bastioncc.cloud
+
 ![picture](/images/xterm.png)
 
 ## Features
