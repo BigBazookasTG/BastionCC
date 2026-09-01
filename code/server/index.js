@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const net = require('net');
 const dns = require('dns');
+const rateLimit = require('express-rate-limit');
 const { exec } = require('child_process');
 
 const app = express();
@@ -20,7 +21,51 @@ if (process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1') {
     app.set('trust proxy', 1);
 }
 
-// 2. STATIC ASSETS & EXPLICIT FILE ROUTES (Resolves CodeQL Exposure of Private Files)
+// 2. RATE LIMITERS (Satisfies CodeQL js/missing-rate-limiting)
+const isRateLimitDisabled = () => process.env.RATE_LIMIT_ENABLED === 'false';
+
+// Global baseline limiter (protects res.sendFile and general endpoints)
+const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 1000,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: isRateLimitDisabled,
+    message: { success: false, message: 'Too many requests, please try again later.' }
+});
+app.use(globalLimiter);
+
+// Strict limiter for setup and login
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: isRateLimitDisabled,
+    message: { success: false, message: 'Too many login attempts, please try again after 15 minutes.' }
+});
+
+// Strict limiter for PIN rotation & vault re-encryption
+const pinLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: isRateLimitDisabled,
+    message: { success: false, message: 'Too many PIN reset attempts, please wait 15 minutes.' }
+});
+
+// Limiter for API Key vault modifications
+const keyLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 15,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: isRateLimitDisabled,
+    message: { success: false, message: 'Too many key update requests, please try again shortly.' }
+});
+
+// 3. STATIC ASSETS & EXPLICIT FILE ROUTES (Resolves CodeQL Exposure of Private Files)
 app.use(express.static(path.join(__dirname, '../public')));
 
 app.get('/node_modules/xterm/css/xterm.css', (req, res) => {
@@ -34,48 +79,6 @@ app.get('/node_modules/xterm-addon-fit/lib/xterm-addon-fit.js', (req, res) => {
 });
 
 app.use(express.json());
-
-// 3. ZERO-DEPENDENCY SLIDING-WINDOW RATE LIMITER (Resolves CodeQL js/missing-rate-limiting)
-const createLimiter = ({ windowMs = 60 * 1000, max = 30, message = 'Too Many Requests' } = {}) => {
-    const hits = new Map();
-
-    setInterval(() => {
-        const now = Date.now();
-        for (const [ip, data] of hits.entries()) {
-            if (now - data.resetTime > windowMs) hits.delete(ip);
-        }
-    }, windowMs).unref();
-
-    return (req, res, next) => {
-        // Environment Variable Override / Localhost Bypass
-        if (process.env.RATE_LIMIT_ENABLED === 'false') {
-            return next();
-        }
-
-        const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
-        const now = Date.now();
-        const record = hits.get(ip) || { count: 0, resetTime: now };
-
-        if (now - record.resetTime > windowMs) {
-            record.count = 0;
-            record.resetTime = now;
-        }
-
-        record.count++;
-        hits.set(ip, record);
-
-        if (record.count > max) {
-            return res.status(429).json({ success: false, message });
-        }
-
-        next();
-    };
-};
-
-// Tiered Rate Limiters
-const authLimiter = createLimiter({ windowMs: 5 * 60 * 1000, max: 10, message: 'Too many authentication attempts, please try again after 5 minutes' });
-const pinLimiter  = createLimiter({ windowMs: 5 * 60 * 1000, max: 5, message: 'Too many PIN reset attempts, please try again after 5 minutes' });
-const keyLimiter  = createLimiter({ windowMs: 60 * 1000, max: 15, message: 'Too many key operations, please try again shortly' });
 
 const CONFIG_DIR = path.join(__dirname, '../data');
 
