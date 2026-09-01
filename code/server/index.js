@@ -9,17 +9,73 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const net = require('net');
 const dns = require('dns');
-const rateLimit = require('express-rate-limit');
 const { exec } = require('child_process');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 1e8 }); 
 
+// 1. REVERSE PROXY CONFIGURATION
+if (process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1') {
+    app.set('trust proxy', 1);
+}
+
+// 2. STATIC ASSETS & EXPLICIT FILE ROUTES (Resolves CodeQL Exposure of Private Files)
 app.use(express.static(path.join(__dirname, '../public')));
-app.use('/node_modules/xterm', express.static(path.join(__dirname, '../node_modules/xterm')));
-app.use('/node_modules/xterm-addon-fit', express.static(path.join(__dirname, '../node_modules/xterm-addon-fit')));
+
+app.get('/node_modules/xterm/css/xterm.css', (req, res) => {
+    res.sendFile(path.resolve(__dirname, '../node_modules/xterm/css/xterm.css'));
+});
+app.get('/node_modules/xterm/lib/xterm.js', (req, res) => {
+    res.sendFile(path.resolve(__dirname, '../node_modules/xterm/lib/xterm.js'));
+});
+app.get('/node_modules/xterm-addon-fit/lib/xterm-addon-fit.js', (req, res) => {
+    res.sendFile(path.resolve(__dirname, '../node_modules/xterm-addon-fit/lib/xterm-addon-fit.js'));
+});
+
 app.use(express.json());
+
+// 3. ZERO-DEPENDENCY SLIDING-WINDOW RATE LIMITER (Resolves CodeQL js/missing-rate-limiting)
+const createLimiter = ({ windowMs = 60 * 1000, max = 30, message = 'Too Many Requests' } = {}) => {
+    const hits = new Map();
+
+    setInterval(() => {
+        const now = Date.now();
+        for (const [ip, data] of hits.entries()) {
+            if (now - data.resetTime > windowMs) hits.delete(ip);
+        }
+    }, windowMs).unref();
+
+    return (req, res, next) => {
+        // Environment Variable Override / Localhost Bypass
+        if (process.env.RATE_LIMIT_ENABLED === 'false') {
+            return next();
+        }
+
+        const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+        const now = Date.now();
+        const record = hits.get(ip) || { count: 0, resetTime: now };
+
+        if (now - record.resetTime > windowMs) {
+            record.count = 0;
+            record.resetTime = now;
+        }
+
+        record.count++;
+        hits.set(ip, record);
+
+        if (record.count > max) {
+            return res.status(429).json({ success: false, message });
+        }
+
+        next();
+    };
+};
+
+// Tiered Rate Limiters
+const authLimiter = createLimiter({ windowMs: 5 * 60 * 1000, max: 10, message: 'Too many authentication attempts, please try again after 5 minutes' });
+const pinLimiter  = createLimiter({ windowMs: 5 * 60 * 1000, max: 5, message: 'Too many PIN reset attempts, please try again after 5 minutes' });
+const keyLimiter  = createLimiter({ windowMs: 60 * 1000, max: 15, message: 'Too many key operations, please try again shortly' });
 
 const CONFIG_DIR = path.join(__dirname, '../data');
 
@@ -46,8 +102,6 @@ if (fs.existsSync(AUTH_FILE)) {
         fs.writeFileSync(AUTH_FILE, JSON.stringify(masterAuth, null, 2));
     }
 }
-
-const authLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 5, message: { success: false, message: 'Too many attempts, please try again after 5 minutes' } });
 
 function requireAuth(req, res, next) {
     const authHeader = req.headers.authorization || '';
@@ -103,7 +157,7 @@ app.post('/api/login', authLimiter, (req, res) => {
     } else res.status(401).json({ success: false, message: 'Invalid Master PIN' });
 });
 
-app.post('/api/reset-pin', requireAuth, (req, res) => {
+app.post('/api/reset-pin', requireAuth, pinLimiter, (req, res) => {
     const { currentPin, newPin } = req.body;
     if (!currentPin || !newPin || newPin.length < 4) return res.status(400).json({success: false, message: 'Invalid input'});
     
@@ -140,7 +194,7 @@ app.get('/api/abuseipdb-status', requireAuth, (req, res) => {
     res.json({ hasKey: !!(masterAuth && masterAuth.encryptedAbuseIpDbKey) });
 });
 
-app.post('/api/abuseipdb-key', requireAuth, (req, res) => {
+app.post('/api/abuseipdb-key', requireAuth, keyLimiter, (req, res) => {
     const { apiKey, pin } = req.body;
     if (!pin) return res.status(400).json({ success: false, message: 'PIN is required to encrypt key' });
     
@@ -159,7 +213,7 @@ app.post('/api/abuseipdb-key', requireAuth, (req, res) => {
     res.json({ success: true, hasKey: !!masterAuth.encryptedAbuseIpDbKey });
 });
 
-app.delete('/api/abuseipdb-key', requireAuth, (req, res) => {
+app.delete('/api/abuseipdb-key', requireAuth, keyLimiter, (req, res) => {
     if (masterAuth && masterAuth.encryptedAbuseIpDbKey) {
         delete masterAuth.encryptedAbuseIpDbKey;
         fs.writeFileSync(AUTH_FILE, JSON.stringify(masterAuth, null, 2));
@@ -929,10 +983,7 @@ io.on('connection', (socket) => {
                 htmlReport += `<div class="section"><h3>Target: https://${escapeHtmlForReport(cleanUrl)}</h3><h4>SSL Certificate Data</h4><pre>${escapeHtmlForReport(sslOut)}</pre><h4>Raw cURL Headers</h4><pre>${escapeHtmlForReport(curlOutRaw)}</pre><h4>Security Policy Matrix</h4>${matrixHtml}<h4>Missing Critical Policies</h4>${missingHtml}</div>`;
             }
         }
-        htmlReport += `
-    
-
-</body></html>`;
+        htmlReport += `</body></html>`;
         socket.emit('security-data', `\x1b[32m✔ Deep Scan Complete! Preparing HTML Report...\x1b[0m\r\n`);
         socket.emit('deep-scan-complete', htmlReport);
     });
@@ -980,12 +1031,12 @@ io.on('connection', (socket) => {
 
             sshClient.on('ready', () => {
                 socket.emit('ssh-status', { id: config.id, status: 'Connected' }); sshClient._host = config.host; 
+                socket.emit('terminal-data', '\r\n\x1b[32m[BastionCC] SSH Connection established.\x1b[0m\r\n');
                 sshClient.shell({ term: 'xterm-256color', cols: config.cols || 80, rows: config.rows || 24 }, (err, stream) => {
                     if (err) return socket.emit('terminal-data', '\r\nShell error.\r\n');
                     activeShellStream = stream; stream.on('data', d => socket.emit('terminal-data', d.toString('utf-8'))); stream.on('close', () => activeShellStream = null);
                 });
 
-                // Server-side instantaneous poll - raw /proc/stat read & free -m
                 const statsCmd = `head -n 1 /proc/stat 2>/dev/null; echo "---MEM---"; free -m 2>/dev/null`;
 
                 statsInterval = setInterval(() => {
@@ -1003,7 +1054,7 @@ io.on('connection', (socket) => {
                                 if (cpuLine.startsWith('cpu')) {
                                     const tokens = cpuLine.replace(/^cpu\s+/, '').trim().split(/\s+/).map(Number);
                                     if (tokens.length >= 4) {
-                                        const idle = (tokens[3] || 0) + (tokens[4] || 0); // idle + iowait
+                                        const idle = (tokens[3] || 0) + (tokens[4] || 0);
                                         const total = tokens.reduce((acc, v) => acc + (isNaN(v) ? 0 : v), 0);
 
                                         if (prevCpuTicks) {
