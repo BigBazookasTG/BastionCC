@@ -1,7 +1,7 @@
 services:
   dashboard:
     image: ghcr.io/bigbazookastg/bastioncc:v1.8.6  
-    container_name: server-dashboard
+    container_name: bastioncc
     restart: no
     ports:
       # Bound strictly to 127.0.0.1 so it is not exposed on your local Wi-Fi network
