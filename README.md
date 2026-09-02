@@ -77,9 +77,12 @@ The build.SH file is audited by both Claude and Gemini AI  each major version fo
 
 Summary Claude - 2nd September 2026 - V1.9.x
 
-I reviewed the full diff (the new pasted-private-key feature, the deep-scan report generation, and re-checked all the previously fixed spots to make sure nothing regressed under the new code). Everything holds up:
+I reviewed the full diff (the new pasted-private-key feature, the deep-scan report generation, and re-checked all the previously fixed spots to make sure nothing regressed under the new code). 
+
+Everything holds up:
 
 mode allowlist in block-threat — still enforced, still correct.
+
 Key-path validation — actually improved this round. It's now consolidated into one resolvePrivateKey() helper used identically by connect-ssh, the security-scan pivot, and the run-deep-scan pivot, so there's no longer three copies of the logic to keep in sync — just one. That's a better structural fix than what I asked for.
 
 New pasted-key feature (encryptedPrivateKey) — the raw key content is encrypted with the PIN immediately in the save-server handler and delete serverData.privateKey happens before the write to disk, so plaintext key material never touches servers.json. Same careful handling as the existing passphrase encryption.
@@ -91,5 +94,7 @@ One very minor (non-security) note, not worth blocking on: connect-ssh re-regist
 
 Nothing else stood out. This is in good shape — the security posture across all the rounds we've done has held together well as the feature set grew.
 
+Patched
 
+That's exactly the fix — removeAllListeners for all five SFTP event names is now called before re-registering them on each connect-ssh, so switching servers within one session no longer stacks duplicate handlers.
 
