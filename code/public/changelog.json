@@ -1,8 +1,35 @@
 [
   {
-    "version": "v1.8.6",
+    "version": "v1.9",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
+    "title": "Encrypted In-Vault SSH Keys, Drag & Drop Upload & CodeQL Hardening",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Drag-and-Drop Key Management: Added client-side FileReader parsing for SSH private keys, replacing static host filesystem path inputs."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "In-Vault AES-256-GCM Encryption: Private keys are encrypted at rest using the Master PIN and decrypted strictly in memory during SSH sessions."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Automated Vault Re-encryption: Master PIN rotation now automatically re-encrypts all stored private keys, server passphrases, and AbuseIPDB keys."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "CodeQL Hardening & Rate Limiting: Tiered route rate limiters and isolated static routes protect the underlying infrastructure."
+      },
+      {
+        "tag": "CORE",
+        "text": "Universal Portability: Eliminated host filesystem (~/.ssh) volume dependencies for Docker/AppImage and added TRUST_PROXY / RATE_LIMIT_ENABLED controls."
+      }
+    ]
+  },
+  {
+    "version": "v1.8.6",
+    "borderColor": "border-slate-600",
     "title": "Syslog Streamer Modernization, PIN Modal Fix & 5-Domain Deep Audit",
     "changes": [
       {
