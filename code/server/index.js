@@ -17,8 +17,18 @@ const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 1e8 }); 
 
 app.use(express.static(path.join(__dirname, '../public')));
-app.use('/node_modules/xterm', express.static(path.join(__dirname, '../node_modules/xterm')));
-app.use('/node_modules/xterm-addon-fit', express.static(path.join(__dirname, '../node_modules/xterm-addon-fit')));
+
+// Explicit asset routes to eliminate js/serving-sensitive-directory
+app.get('/node_modules/xterm/css/xterm.css', (req, res) => {
+    res.sendFile(path.join(__dirname, '../node_modules/xterm/css/xterm.css'));
+});
+app.get('/node_modules/xterm/lib/xterm.js', (req, res) => {
+    res.sendFile(path.join(__dirname, '../node_modules/xterm/lib/xterm.js'));
+});
+app.get('/node_modules/xterm-addon-fit/lib/xterm-addon-fit.js', (req, res) => {
+    res.sendFile(path.join(__dirname, '../node_modules/xterm-addon-fit/lib/xterm-addon-fit.js'));
+});
+
 app.use(express.json());
 
 const CONFIG_DIR = path.join(__dirname, '../data');
