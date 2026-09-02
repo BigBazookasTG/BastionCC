@@ -355,7 +355,7 @@
             <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
             <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
                 <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
-                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.8.6 Changelog</span></div>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9 Changelog</span></div>
             </div>
         </div>
     </nav>
@@ -542,7 +542,7 @@
 
                 <div class="bg-[#1e1e1e] rounded-lg p-4 border border-slate-700 flex-1 overflow-y-auto shadow-inner min-h-[200px]">
                     <div id="securityTerm" class="font-mono text-sm text-sky-400 whitespace-pre">
-                        <p class="text-slate-500">BastionCC Security Audit Engine v1.8.5</p>
+                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9</p>
                         <p class="text-slate-500">Ready for target acquisition...</p>
                         <p class="text-accent mt-2">> _</p>
                     </div>
@@ -591,10 +591,18 @@
                     </div>
 
                     <div id="div-key-type">
-                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">SSH Key Type & Path</label>
-                        <div class="flex space-x-2">
-                            <select id="frm-key-type" onchange="toggleCustomKeyPath()" class="w-1/3 px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-sm"><option value="/root/.ssh/id_ed25519">id_ed25519</option><option value="/root/.ssh/id_rsa">id_rsa</option><option value="/root/.ssh/id_ecdsa">id_ecdsa</option><option value="custom">Custom Path...</option></select>
-                            <input type="text" id="frm-key-custom" placeholder="e.g. /home/user/.ssh/custom_key" class="hidden flex-1 px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none text-sm">
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">SSH Private Key (Encrypted Vault)</label>
+                        <div id="key-drop-zone" class="relative border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-accent rounded-xl p-3 text-center cursor-pointer transition-all bg-slate-50/50 dark:bg-slate-900/50">
+                            <input type="file" id="srv-key-file" class="hidden" accept=".pem,.key,id_rsa,id_ed25519,id_ecdsa,id_dsa,*">
+                            <div id="key-drop-label" class="flex flex-col items-center justify-center space-y-1 text-xs text-slate-500 dark:text-slate-400">
+                                <span class="text-lg">🔑</span>
+                                <span class="font-medium text-slate-700 dark:text-slate-200">Click or Drag & Drop SSH Private Key</span>
+                                <span class="text-[10px] text-slate-400">id_ed25519, id_rsa, .pem (AES-256-GCM encrypted in-vault)</span>
+                            </div>
+                            <div id="key-vault-badge" class="hidden flex items-center justify-between mt-2 p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs text-emerald-400 font-mono">
+                                <span class="flex items-center gap-1.5"><span>🔒</span> <span id="key-vault-filename">Key Stored in Vault</span></span>
+                                <button type="button" id="btn-clear-key" class="text-rose-400 hover:text-rose-300 text-xs px-2 py-0.5 rounded hover:bg-rose-500/10">Remove</button>
+                            </div>
                         </div>
                     </div>
                     <div><label id="lbl-passphrase" class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">SSH Key Passphrase (Stored Encrypted At Rest)</label><input type="password" id="frm-passphrase" placeholder="Leave blank if key has no passphrase (or keep current)" class="w-full px-4 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none"></div>
@@ -630,6 +638,7 @@
         const whoisCache = new Map();
         let pendingDefense = { ip: null, mode: null, rowIndex: null };
         let activeVectorMap = null;
+        let pendingUploadedPrivateKey = '';
 
         // --- DETERMINISTIC DEMO MODE OBFUSCATION ENGINE ---
         let isDemoMode = localStorage.getItem('bastioncc_demo_mode') === 'true';
@@ -714,6 +723,46 @@
             document.getElementById('btn-sftp-up').addEventListener('click', navUp); 
             document.getElementById('log-grep-input').addEventListener('input', renderFilteredLogs);
             document.querySelectorAll('.sort-btn').forEach(btn => btn.addEventListener('click', () => sortDocker(btn.dataset.col)));
+
+            // Key Vault Dropzone Listeners
+            const dropZoneKey = document.getElementById('key-drop-zone');
+            const fileInputKey = document.getElementById('srv-key-file');
+            const dropLabelKey = document.getElementById('key-drop-label');
+            const vaultBadgeKey = document.getElementById('key-vault-badge');
+            const vaultFilenameKey = document.getElementById('key-vault-filename');
+            const btnClearKey = document.getElementById('btn-clear-key');
+
+            if (dropZoneKey && fileInputKey) {
+                dropZoneKey.addEventListener('click', (e) => {
+                    if (e.target !== btnClearKey && !btnClearKey.contains(e.target)) fileInputKey.click();
+                });
+                dropZoneKey.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    dropZoneKey.classList.add('border-accent', 'bg-accent/5');
+                });
+                ['dragleave', 'dragend'].forEach(evt => {
+                    dropZoneKey.addEventListener(evt, () => {
+                        dropZoneKey.classList.remove('border-accent', 'bg-accent/5');
+                    });
+                });
+                dropZoneKey.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    dropZoneKey.classList.remove('border-accent', 'bg-accent/5');
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) handleKeyFile(e.dataTransfer.files[0]);
+                });
+                fileInputKey.addEventListener('change', (e) => {
+                    if (e.target.files && e.target.files[0]) handleKeyFile(e.target.files[0]);
+                });
+                if (btnClearKey) {
+                    btnClearKey.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        pendingUploadedPrivateKey = 'CLEAR_KEY';
+                        vaultBadgeKey.classList.add('hidden');
+                        dropLabelKey.classList.remove('hidden');
+                        fileInputKey.value = '';
+                    });
+                }
+            }
         });
 
         function getTagBadge(tag) {
@@ -966,7 +1015,7 @@
 
         function exportVault() {
             if (serversData.length === 0) return showToast('Your vault is empty.', 'error');
-            const safeData = serversData.map(s => { const { encryptedPassphrase, passphrase, tempPlaintext, ...rest } = s; return rest; });
+            const safeData = serversData.map(s => { const { encryptedPassphrase, passphrase, tempPlaintext, encryptedPrivateKey, privateKey, tempKeyPlaintext, ...rest } = s; return rest; });
             const blob = new Blob([JSON.stringify(safeData, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `bastioncc-vault-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href);
         }
         function importVault(e) {
@@ -1502,8 +1551,13 @@
 
         function showAddServerForm() {
             editingServerId = null; document.getElementById('telemetry-bar').classList.add('hidden');
-            ['name','host','key-custom','passphrase'].forEach(id => document.getElementById('frm-'+id).value = '');
-            document.getElementById('frm-port').value = '22'; document.getElementById('frm-user').value = 'root'; document.getElementById('frm-key-type').value = '/root/.ssh/id_ed25519'; document.getElementById('frm-key-custom').classList.add('hidden');
+            ['name','host','passphrase'].forEach(id => document.getElementById('frm-'+id).value = '');
+            pendingUploadedPrivateKey = '';
+            const vb = document.getElementById('key-vault-badge'), dl = document.getElementById('key-drop-label');
+            if (vb) vb.classList.add('hidden');
+            if (dl) dl.classList.remove('hidden');
+            const kf = document.getElementById('srv-key-file'); if (kf) kf.value = '';
+            document.getElementById('frm-port').value = '22'; document.getElementById('frm-user').value = 'root';
             ['docker','logs','security'].forEach(id => document.getElementById('frm-'+id).checked = true);
             document.getElementById('frm-sudo').checked = true;
             document.getElementById('frm-auth-method').checked = false; toggleAuthMethod();
@@ -1517,8 +1571,17 @@
             event.stopPropagation(); editingServerId = id; document.getElementById('telemetry-bar').classList.add('hidden'); document.getElementById('delete-server-btn').classList.remove('hidden');
             const srv = serversData.find(s => s.id === id);
             document.getElementById('frm-name').value = srv.name; document.getElementById('frm-host').value = srv.host; document.getElementById('frm-port').value = srv.port || '22'; document.getElementById('frm-user').value = srv.username || 'root';
-            const kp = srv.privateKeyPath || '/root/.ssh/id_ed25519';
-            if (['/root/.ssh/id_ed25519', '/root/.ssh/id_rsa', '/root/.ssh/id_ecdsa'].includes(kp)) { document.getElementById('frm-key-type').value = kp; document.getElementById('frm-key-custom').classList.add('hidden'); } else { document.getElementById('frm-key-type').value = 'custom'; document.getElementById('frm-key-custom').value = kp; document.getElementById('frm-key-custom').classList.remove('hidden'); }
+            pendingUploadedPrivateKey = '';
+            const vb = document.getElementById('key-vault-badge'), dl = document.getElementById('key-drop-label'), vf = document.getElementById('key-vault-filename');
+            if (srv.encryptedPrivateKey) {
+                if (vb) vb.classList.remove('hidden');
+                if (dl) dl.classList.add('hidden');
+                if (vf) vf.innerText = 'Key Stored in Vault';
+            } else {
+                if (vb) vb.classList.add('hidden');
+                if (dl) dl.classList.remove('hidden');
+            }
+            const kf = document.getElementById('srv-key-file'); if (kf) kf.value = '';
             document.getElementById('frm-passphrase').value = '';
             document.getElementById('frm-docker').checked = srv.dockerEnabled !== false; document.getElementById('frm-logs').checked = srv.logsEnabled !== false; document.getElementById('frm-security').checked = srv.securityEnabled !== false;
             document.getElementById('frm-sudo').checked = srv.isSudo !== false;
@@ -1553,13 +1616,42 @@
         function moveMacroUp(el) { const row = el.closest ? el.closest('.macro-row') || el.closest('.log-row') : el.parentElement.parentElement.parentElement; if (row && row.previousElementSibling) row.parentElement.insertBefore(row, row.previousElementSibling); }
         function moveMacroDown(el) { const row = el.closest ? el.closest('.macro-row') || el.closest('.log-row') : el.parentElement.parentElement.parentElement; if (row && row.nextElementSibling) row.parentElement.insertBefore(row, row.nextElementSibling); }
 
+        function handleKeyFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                pendingUploadedPrivateKey = e.target.result;
+                const vf = document.getElementById('key-vault-filename'); if (vf) vf.innerText = file.name + ' (Ready to Save)';
+                const vb = document.getElementById('key-vault-badge'); if (vb) vb.classList.remove('hidden');
+                const dl = document.getElementById('key-drop-label'); if (dl) dl.classList.add('hidden');
+            };
+            reader.readAsText(file);
+        }
+
         function saveServer() {
             const macros = Array.from(document.querySelectorAll('.macro-row')).map(r => ({ label: r.querySelector('.m-label').value, cmd: r.querySelector('.m-cmd').value, auto: r.querySelector('.m-auto').checked })).filter(m => m.label && m.cmd);
             const customLogs = Array.from(document.querySelectorAll('.log-row')).map(r => ({ label: r.querySelector('.l-label').value, type: r.querySelector('.l-type').value, path: r.querySelector('.l-path').value })).filter(l => l.label && l.path);
-            let finalKeyPath = document.getElementById('frm-key-type').value; if (finalKeyPath === 'custom') finalKeyPath = document.getElementById('frm-key-custom').value;
             const authMethod = document.getElementById('frm-auth-method').checked ? 'password' : 'key';
             const isSudo = document.getElementById('frm-sudo').checked;
-            socket.emit('save-server', { id: editingServerId, name: document.getElementById('frm-name').value, host: document.getElementById('frm-host').value, port: document.getElementById('frm-port').value, username: document.getElementById('frm-user').value, privateKeyPath: finalKeyPath, passphrase: document.getElementById('frm-passphrase').value, authMethod, isSudo, dockerEnabled: document.getElementById('frm-docker').checked, logsEnabled: document.getElementById('frm-logs').checked, securityEnabled: document.getElementById('frm-security').checked, macros, customLogs });
+            const payload = {
+                id: editingServerId,
+                name: document.getElementById('frm-name').value,
+                host: document.getElementById('frm-host').value,
+                port: document.getElementById('frm-port').value,
+                username: document.getElementById('frm-user').value,
+                passphrase: document.getElementById('frm-passphrase').value,
+                authMethod,
+                isSudo,
+                dockerEnabled: document.getElementById('frm-docker').checked,
+                logsEnabled: document.getElementById('frm-logs').checked,
+                securityEnabled: document.getElementById('frm-security').checked,
+                macros,
+                customLogs
+            };
+            if (pendingUploadedPrivateKey) {
+                payload.privateKey = pendingUploadedPrivateKey;
+            }
+            socket.emit('save-server', payload);
+            pendingUploadedPrivateKey = '';
             document.getElementById('view-add-server').classList.add('hidden'); 
             showToast('Server configuration saved.');
             switchTab('terminal'); 
