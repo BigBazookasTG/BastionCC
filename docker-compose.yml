@@ -17,4 +17,4 @@ services:
       # Persists your server list and macros
       - ./data:/app/data
       # Mounts your local SSH keys read-only for seamless authentication
-      - /path/to/ssh/folder/.ssh:/root/.ssh:ro #<<<<<<<<<<<<<<<CHANGE ME
+      #- /path/to/ssh/folder/.ssh:/root/.ssh:ro #REMOVED from V1.9.2, in prepartion of appimage build, keyfiles can now be added via drag and drop.
