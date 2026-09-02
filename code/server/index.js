@@ -16,68 +16,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 1e8 }); 
 
-// 1. REVERSE PROXY CONFIGURATION
-if (process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1') {
-    app.set('trust proxy', 1);
-}
-
-// 2. RATE LIMITERS (Satisfies CodeQL js/missing-rate-limiting)
-const isRateLimitDisabled = () => process.env.RATE_LIMIT_ENABLED === 'false';
-
-// Global baseline limiter (protects res.sendFile and general endpoints)
-const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 1000,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: isRateLimitDisabled,
-    message: { success: false, message: 'Too many requests, please try again later.' }
-});
-app.use(globalLimiter);
-
-// Strict limiter for setup and login
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: isRateLimitDisabled,
-    message: { success: false, message: 'Too many login attempts, please try again after 15 minutes.' }
-});
-
-// Strict limiter for PIN rotation & vault re-encryption
-const pinLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 5,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: isRateLimitDisabled,
-    message: { success: false, message: 'Too many PIN reset attempts, please wait 15 minutes.' }
-});
-
-// Limiter for API Key vault modifications
-const keyLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000,
-    max: 15,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: isRateLimitDisabled,
-    message: { success: false, message: 'Too many key update requests, please try again shortly.' }
-});
-
-// 3. STATIC ASSETS & EXPLICIT FILE ROUTES (Resolves CodeQL Exposure of Private Files)
 app.use(express.static(path.join(__dirname, '../public')));
-
-app.get('/node_modules/xterm/css/xterm.css', (req, res) => {
-    res.sendFile(path.resolve(__dirname, '../node_modules/xterm/css/xterm.css'));
-});
-app.get('/node_modules/xterm/lib/xterm.js', (req, res) => {
-    res.sendFile(path.resolve(__dirname, '../node_modules/xterm/lib/xterm.js'));
-});
-app.get('/node_modules/xterm-addon-fit/lib/xterm-addon-fit.js', (req, res) => {
-    res.sendFile(path.resolve(__dirname, '../node_modules/xterm-addon-fit/lib/xterm-addon-fit.js'));
-});
-
+app.use('/node_modules/xterm', express.static(path.join(__dirname, '../node_modules/xterm')));
+app.use('/node_modules/xterm-addon-fit', express.static(path.join(__dirname, '../node_modules/xterm-addon-fit')));
 app.use(express.json());
 
 const CONFIG_DIR = path.join(__dirname, '../data');
@@ -105,6 +46,8 @@ if (fs.existsSync(AUTH_FILE)) {
         fs.writeFileSync(AUTH_FILE, JSON.stringify(masterAuth, null, 2));
     }
 }
+
+const authLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 5, message: { success: false, message: 'Too many attempts, please try again after 5 minutes' } });
 
 function requireAuth(req, res, next) {
     const authHeader = req.headers.authorization || '';
@@ -160,7 +103,7 @@ app.post('/api/login', authLimiter, (req, res) => {
     } else res.status(401).json({ success: false, message: 'Invalid Master PIN' });
 });
 
-app.post('/api/reset-pin', requireAuth, pinLimiter, (req, res) => {
+app.post('/api/reset-pin', requireAuth, (req, res) => {
     const { currentPin, newPin } = req.body;
     if (!currentPin || !newPin || newPin.length < 4) return res.status(400).json({success: false, message: 'Invalid input'});
     
@@ -169,7 +112,11 @@ app.post('/api/reset-pin', requireAuth, pinLimiter, (req, res) => {
     if (verifyHash.length !== storedHash.length || !crypto.timingSafeEqual(verifyHash, storedHash)) return res.status(401).json({success: false, message: 'Invalid current PIN'});
     
     let servers = getServers();
-    servers = servers.map(s => { if (s.encryptedPassphrase) s.tempPlaintext = decryptPassphrase(s.encryptedPassphrase, currentPin); return s; });
+    servers = servers.map(s => {
+        if (s.encryptedPassphrase) s.tempPlaintext = decryptPassphrase(s.encryptedPassphrase, currentPin);
+        if (s.encryptedPrivateKey) s.tempKeyPlaintext = decryptPassphrase(s.encryptedPrivateKey, currentPin);
+        return s;
+    });
     
     let tempAbuseKey = '';
     if (masterAuth.encryptedAbuseIpDbKey) {
@@ -187,7 +134,11 @@ app.post('/api/reset-pin', requireAuth, pinLimiter, (req, res) => {
     }
     fs.writeFileSync(AUTH_FILE, JSON.stringify(masterAuth, null, 2));
     
-    servers = servers.map(s => { if (s.tempPlaintext) { s.encryptedPassphrase = encryptPassphrase(s.tempPlaintext, newPin); delete s.tempPlaintext; } return s; });
+    servers = servers.map(s => {
+        if (s.tempPlaintext) { s.encryptedPassphrase = encryptPassphrase(s.tempPlaintext, newPin); delete s.tempPlaintext; }
+        if (s.tempKeyPlaintext) { s.encryptedPrivateKey = encryptPassphrase(s.tempKeyPlaintext, newPin); delete s.tempKeyPlaintext; }
+        return s;
+    });
     fs.writeFileSync(DATA_FILE, JSON.stringify(servers, null, 2));
     io.disconnectSockets();
     res.json({success: true});
@@ -197,7 +148,7 @@ app.get('/api/abuseipdb-status', requireAuth, (req, res) => {
     res.json({ hasKey: !!(masterAuth && masterAuth.encryptedAbuseIpDbKey) });
 });
 
-app.post('/api/abuseipdb-key', requireAuth, keyLimiter, (req, res) => {
+app.post('/api/abuseipdb-key', requireAuth, (req, res) => {
     const { apiKey, pin } = req.body;
     if (!pin) return res.status(400).json({ success: false, message: 'PIN is required to encrypt key' });
     
@@ -216,7 +167,7 @@ app.post('/api/abuseipdb-key', requireAuth, keyLimiter, (req, res) => {
     res.json({ success: true, hasKey: !!masterAuth.encryptedAbuseIpDbKey });
 });
 
-app.delete('/api/abuseipdb-key', requireAuth, keyLimiter, (req, res) => {
+app.delete('/api/abuseipdb-key', requireAuth, (req, res) => {
     if (masterAuth && masterAuth.encryptedAbuseIpDbKey) {
         delete masterAuth.encryptedAbuseIpDbKey;
         fs.writeFileSync(AUTH_FILE, JSON.stringify(masterAuth, null, 2));
@@ -244,6 +195,17 @@ function decryptPassphrase(encryptedData, pin) {
         let decrypted = decipher.update(parts[2], 'hex', 'utf8'); decrypted += decipher.final('utf8');
         return decrypted;
     } catch (e) { return ''; }
+}
+
+function resolvePrivateKey(serverConfig, pin) {
+    if (serverConfig.encryptedPrivateKey && pin) {
+        const decrypted = decryptPassphrase(serverConfig.encryptedPrivateKey, pin);
+        if (decrypted) return decrypted;
+    }
+    if (serverConfig.privateKeyPath && isValidKeyPath(serverConfig.privateKeyPath)) {
+        try { return fs.readFileSync(path.resolve(serverConfig.privateKeyPath), 'utf8'); } catch(e) { return null; }
+    }
+    return null;
 }
 
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify([]));
@@ -289,7 +251,7 @@ function escapeHtmlForReport(str) { return String(str).replace(/[&<>"']/g, m => 
 
 function fetchHttpsJson(url, headers = {}) {
     return new Promise((resolve, reject) => {
-        const req = https.get(url, { headers: { 'User-Agent': 'BastionCC/1.8.6', ...headers }, timeout: 4000 }, (res) => {
+        const req = https.get(url, { headers: { 'User-Agent': 'BastionCC/1.9', ...headers }, timeout: 4000 }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
@@ -422,7 +384,7 @@ io.on('connection', (socket) => {
     socket.emit('servers-list', getServers());
     
     socket.on('emergency-lock', () => {
-        const servers = getServers(); servers.forEach(s => delete s.encryptedPassphrase);
+        const servers = getServers(); servers.forEach(s => { delete s.encryptedPassphrase; delete s.encryptedPrivateKey; });
         fs.writeFileSync(DATA_FILE, JSON.stringify(servers, null, 2));
         masterAuth.jwtSecret = crypto.randomBytes(64).toString('hex');
         delete masterAuth.encryptedAbuseIpDbKey;
@@ -436,14 +398,25 @@ io.on('connection', (socket) => {
         const pin = activePins.get(socket.id);
         if (serverData.passphrase && pin) serverData.encryptedPassphrase = encryptPassphrase(serverData.passphrase, pin);
         delete serverData.passphrase;
+        if (serverData.privateKey && pin) {
+            if (serverData.privateKey === 'CLEAR_KEY') {
+                delete serverData.encryptedPrivateKey;
+            } else {
+                serverData.encryptedPrivateKey = encryptPassphrase(serverData.privateKey.trim(), pin);
+            }
+        }
+        delete serverData.privateKey;
         if (serverData.privateKeyPath && !isValidKeyPath(serverData.privateKeyPath)) {
-            serverData.privateKeyPath = '/root/.ssh/id_ed25519';
+            delete serverData.privateKeyPath;
         }
         const servers = getServers();
         if (serverData.id) {
             const index = servers.findIndex(s => s.id === serverData.id);
-            if (index !== -1) { if (!serverData.encryptedPassphrase && servers[index].encryptedPassphrase) serverData.encryptedPassphrase = servers[index].encryptedPassphrase; servers[index] = serverData; }
-            else servers.push(serverData);
+            if (index !== -1) {
+                if (!serverData.encryptedPassphrase && servers[index].encryptedPassphrase) serverData.encryptedPassphrase = servers[index].encryptedPassphrase;
+                if (!serverData.encryptedPrivateKey && servers[index].encryptedPrivateKey && serverData.privateKey !== 'CLEAR_KEY') serverData.encryptedPrivateKey = servers[index].encryptedPrivateKey;
+                servers[index] = serverData;
+            } else servers.push(serverData);
         } else { serverData.id = 'srv_' + Date.now(); servers.push(serverData); }
         fs.writeFileSync(DATA_FILE, JSON.stringify(servers, null, 2));
         io.emit('servers-list', getServers());
@@ -728,9 +701,9 @@ io.on('connection', (socket) => {
                 let connectOpts = { host: pivotSrv.host, port: parseInt(pivotSrv.port) || 22, username: pivotSrv.username, tryKeyboard: true };
                 if (pivotSrv.authMethod === 'password') connectOpts.password = decryptedPassphrase;
                 else {
-                    const kPath = pivotSrv.privateKeyPath || '/root/.ssh/id_ed25519';
-                    if (!isValidKeyPath(kPath)) { socket.emit('security-data', '\x1b[31mError: Pivot SSH key path restricted.\x1b[0m\r\n'); socket.emit('security-complete'); return; }
-                    connectOpts.privateKey = fs.readFileSync(path.resolve(kPath), 'utf8');
+                    const privateKeyStr = resolvePrivateKey(pivotSrv, pin);
+                    if (!privateKeyStr) { socket.emit('security-data', '\x1b[31mError: Pivot SSH private key not found or decryption failed.\x1b[0m\r\n'); socket.emit('security-complete'); return; }
+                    connectOpts.privateKey = privateKeyStr;
                     if (decryptedPassphrase) connectOpts.passphrase = decryptedPassphrase;
                 }
 
@@ -888,9 +861,9 @@ io.on('connection', (socket) => {
                     let connectOpts = { host: pivotSrv.host, port: parseInt(pivotSrv.port) || 22, username: pivotSrv.username, tryKeyboard: true };
                     if (pivotSrv.authMethod === 'password') connectOpts.password = decryptedPassphrase;
                     else {
-                        const kPath = pivotSrv.privateKeyPath || '/root/.ssh/id_ed25519';
-                        if (!isValidKeyPath(kPath)) return res("Pivot Error: SSH key path restricted.");
-                        connectOpts.privateKey = fs.readFileSync(path.resolve(kPath), 'utf8');
+                        const privateKeyStr = resolvePrivateKey(pivotSrv, pin);
+                        if (!privateKeyStr) return res("Pivot Error: SSH private key not found or decryption failed.");
+                        connectOpts.privateKey = privateKeyStr;
                         if (decryptedPassphrase) connectOpts.passphrase = decryptedPassphrase;
                     }
 
@@ -986,7 +959,10 @@ io.on('connection', (socket) => {
                 htmlReport += `<div class="section"><h3>Target: https://${escapeHtmlForReport(cleanUrl)}</h3><h4>SSL Certificate Data</h4><pre>${escapeHtmlForReport(sslOut)}</pre><h4>Raw cURL Headers</h4><pre>${escapeHtmlForReport(curlOutRaw)}</pre><h4>Security Policy Matrix</h4>${matrixHtml}<h4>Missing Critical Policies</h4>${missingHtml}</div>`;
             }
         }
-        htmlReport += `</body></html>`;
+        htmlReport += `
+    
+
+</body></html>`;
         socket.emit('security-data', `\x1b[32m✔ Deep Scan Complete! Preparing HTML Report...\x1b[0m\r\n`);
         socket.emit('deep-scan-complete', htmlReport);
     });
@@ -1026,20 +1002,20 @@ io.on('connection', (socket) => {
             let connectOpts = { host: config.host, port: parseInt(config.port) || 22, username: config.username, tryKeyboard: true };
             if (config.authMethod === 'password') connectOpts.password = decryptedPassphrase;
             else {
-                const kPath = config.privateKeyPath || '/root/.ssh/id_ed25519';
-                if (!isValidKeyPath(kPath)) return socket.emit('terminal-data', '\r\n\x1b[31mConfig Error: Key path restricted.\x1b[0m\r\n');
-                connectOpts.privateKey = fs.readFileSync(path.resolve(kPath), 'utf8');
+                const privateKeyStr = resolvePrivateKey(config, pin);
+                if (!privateKeyStr) return socket.emit('terminal-data', '\r\n\x1b[31mConfig Error: SSH private key not found or decryption failed.\x1b[0m\r\n');
+                connectOpts.privateKey = privateKeyStr;
                 if (decryptedPassphrase) connectOpts.passphrase = decryptedPassphrase;
             }
 
             sshClient.on('ready', () => {
                 socket.emit('ssh-status', { id: config.id, status: 'Connected' }); sshClient._host = config.host; 
-                socket.emit('terminal-data', '\r\n\x1b[32m[BastionCC] SSH Connection established.\x1b[0m\r\n');
                 sshClient.shell({ term: 'xterm-256color', cols: config.cols || 80, rows: config.rows || 24 }, (err, stream) => {
                     if (err) return socket.emit('terminal-data', '\r\nShell error.\r\n');
                     activeShellStream = stream; stream.on('data', d => socket.emit('terminal-data', d.toString('utf-8'))); stream.on('close', () => activeShellStream = null);
                 });
 
+                // Server-side instantaneous poll - raw /proc/stat read & free -m
                 const statsCmd = `head -n 1 /proc/stat 2>/dev/null; echo "---MEM---"; free -m 2>/dev/null`;
 
                 statsInterval = setInterval(() => {
@@ -1057,7 +1033,7 @@ io.on('connection', (socket) => {
                                 if (cpuLine.startsWith('cpu')) {
                                     const tokens = cpuLine.replace(/^cpu\s+/, '').trim().split(/\s+/).map(Number);
                                     if (tokens.length >= 4) {
-                                        const idle = (tokens[3] || 0) + (tokens[4] || 0);
+                                        const idle = (tokens[3] || 0) + (tokens[4] || 0); // idle + iowait
                                         const total = tokens.reduce((acc, v) => acc + (isNaN(v) ? 0 : v), 0);
 
                                         if (prevCpuTicks) {
@@ -1099,6 +1075,7 @@ io.on('connection', (socket) => {
 
                 sshClient.sftp((err, sftp) => {
                     if (err) return; sftpSession = sftp;
+                    ['sftp-list', 'sftp-download', 'sftp-upload-start', 'sftp-upload-chunk', 'sftp-upload-end'].forEach(evt => socket.removeAllListeners(evt));
                     socket.on('sftp-list', (targetPath) => {
                         sftp.readdir(targetPath, (err, list) => {
                             if (err) return;
@@ -1135,4 +1112,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.8.6 Ready on port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9 Ready on port ${PORT}`));
