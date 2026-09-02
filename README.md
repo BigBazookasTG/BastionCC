@@ -15,7 +15,7 @@
 ## Features
 
 ### Add multiple servers via a simple user interface 
-    * Add path to SSH Keys and authenticate in the backend once when adding the server (password is not stored in file and is hashed using your master password
+    * Add SSH Keys and authenticate in the backend once when adding the server (password is not stored in file and is hashed using your master password
 
  ![picture](/images/addserver.png)
  
