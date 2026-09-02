@@ -18,14 +18,21 @@ const io = new Server(server, { maxHttpBufferSize: 1e8 });
 
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Explicit asset routes to eliminate js/serving-sensitive-directory
-app.get('/node_modules/xterm/css/xterm.css', (req, res) => {
+// Explicit asset routes with rate limiting to satisfy js/missing-rate-limiting & js/serving-sensitive-directory
+const assetLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 500,
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+app.get('/node_modules/xterm/css/xterm.css', assetLimiter, (req, res) => {
     res.sendFile(path.join(__dirname, '../node_modules/xterm/css/xterm.css'));
 });
-app.get('/node_modules/xterm/lib/xterm.js', (req, res) => {
+app.get('/node_modules/xterm/lib/xterm.js', assetLimiter, (req, res) => {
     res.sendFile(path.join(__dirname, '../node_modules/xterm/lib/xterm.js'));
 });
-app.get('/node_modules/xterm-addon-fit/lib/xterm-addon-fit.js', (req, res) => {
+app.get('/node_modules/xterm-addon-fit/lib/xterm-addon-fit.js', assetLimiter, (req, res) => {
     res.sendFile(path.join(__dirname, '../node_modules/xterm-addon-fit/lib/xterm-addon-fit.js'));
 });
 
