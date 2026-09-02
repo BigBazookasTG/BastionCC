@@ -75,7 +75,7 @@ visit localhost:3000 or 127.0.0.1:3000
 The build.SH file is audited by both Claude and Gemini AI  each major version for weaknesses, then the measures to circumvent are implemented to mitigate possible risks, however it should be noted i am deploying on my laptop locally, i would not recommend deploying as a cloud based tool.
 
 
-Summary Claude - 2nd September 2026 - V1.9.x
+### Summary Claude - 2nd September 2026 - V1.9.x
 
 I reviewed the full diff (the new pasted-private-key feature, the deep-scan report generation, and re-checked all the previously fixed spots to make sure nothing regressed under the new code). 
 
