@@ -75,25 +75,21 @@ visit localhost:3000 or 127.0.0.1:3000
 The build.SH file is audited by both Claude and Gemini AI  each major version for weaknesses, then the measures to circumvent are implemented to mitigate possible risks, however it should be noted i am deploying on my laptop locally, i would not recommend deploying as a cloud based tool.
 
 ~~~
-Version 4+ Security review and patch implementation
+Summary
 
-1) Command Injection: Right now, if the frontend sends container = "ubuntu && rm -rf /", the backend blindly executes it on your remote server via SSH. Even though you are the only user, it's best practice to sanitize this so a stray typo or a compromised browser tab can't accidentally nuke your server.
+I reviewed the full diff (the new pasted-private-key feature, the deep-scan report generation, and re-checked all the previously fixed spots to make sure nothing regressed under the new code). Everything holds up:
 
-2) Arbitrary File Read: Because the backend reads whatever path the frontend sends in config.privateKeyPath, a manipulated socket message could force the backend to read your auth.json or /etc/passwd file.
+mode allowlist in block-threat — still enforced, still correct.
+Key-path validation — actually improved this round. It's now consolidated into one resolvePrivateKey() helper used identically by connect-ssh, the security-scan pivot, and the run-deep-scan pivot, so there's no longer three copies of the logic to keep in sync — just one. That's a better structural fix than what I asked for.
 
-3) Timing-unsafe PIN comparison: While network jitter usually makes timing attacks nearly impossible over a standard network, since you are running this locally (where latency is basically zero), a script could theoretically measure the nanosecond differences in how long the backend takes to reject a PIN. Switching to crypto.timingSafeEqual is a one-line fix and perfect cryptographic hygiene.
+New pasted-key feature (encryptedPrivateKey) — the raw key content is encrypted with the PIN immediately in the save-server handler and delete serverData.privateKey happens before the write to disk, so plaintext key material never touches servers.json. Same careful handling as the existing passphrase encryption.
 
-4) Brute-force protection: Since your dashboard isn't exposed to the internet, a remote botnet isn't going to hammer it. However, a malicious script running locally on your laptop could try to guess a 4-digit PIN in seconds. Adding a simple in-memory rate limiter (e.g., locking out for 5 minutes after 5 failed attempts) completely kills this vector.
+Deep-scan report — all dynamic values (nmapOut, fwResult, ban history entries, domain audit output) go through escapeHtmlForReport() before being embedded in the generated HTML, and it's rendered in ordinary element content, not inline event handlers, so no XSS class issue there.
+Docker/nmap/curl/ssl sanitization — unchanged, still correctly allowlisted.
 
-5) Stored XSS (Cross-Site Scripting): Because you are the only user, you would technically have to XSS yourself by typing malicious JavaScript into a server name or macro label. That said, if you ever copy-pasted a weird string by accident, it could break your UI. Writing a tiny helper function to sanitize those HTML strings is standard practice and will make the UI bulletproof.
+One very minor (non-security) note, not worth blocking on: connect-ssh re-registers the sftp-list/sftp-download/sftp-upload-* listeners on the socket every time it runs, without removing prior ones first. If a single browser session connects to multiple servers in sequence without a page reload, you'll accumulate duplicate listeners and each SFTP action could fire multiple times. Worth a socket.removeAllListeners('sftp-list') etc. at the top of the sshClient.sftp() callback if you ever notice duplicate SFTP events, but it's a correctness nit, not a vulnerability.
 
-6) Plaintext over HTTP: Claude is absolutely right for a normal deployment, but because you are running Nginx Proxy Manager, your TLS (HTTPS/WSS) is already handled at the proxy level. The traffic is encrypted before it ever leaves your laptop/network. We don't need to change the app code for this, you already built the right architecture!
-
-7) JWT_SECRET Regeneration: This is actually a great catch. Right now, if you restart the Docker container, it generates a new JWT secret in memory, which immediately logs you out of any open tabs. We should absolutely save the JWT_SECRET into auth.json so your sessions survive container restarts.
-
-8) Emergency Lock doesn't revoke sessions: This is the best catch in the entire audit. Because JWTs are stateless, kicking the WebSocket disconnects the live terminal, but the browser still holds a valid token. If we rotate the JWT_SECRET when you hit Emergency Lock, every single active token instantly becomes worthless. That makes the lock truly absolute.
-
-9) Exposing /node_modules: Sloppy on my part! Exposing the whole directory gives away unnecessary info. We will lock the static routing down so it only serves the specific xterm files the frontend actually needs.
+Nothing else stood out. This is in good shape — the security posture across all the rounds we've done has held together well as the feature set grew.
 
 ~~~
 
