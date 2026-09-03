@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const { Client } = require('ssh2');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const net = require('net');
@@ -27,26 +28,38 @@ const assetLimiter = rateLimit({
 });
 
 app.get('/node_modules/xterm/css/xterm.css', assetLimiter, (req, res) => {
-    res.sendFile(path.join(__dirname, '../node_modules/xterm/css/xterm.css'));
+    res.sendFile(path.join(__dirname, '../node_modules/xterm/css/xterm.css'), { dotfiles: 'allow' });
 });
 app.get('/node_modules/xterm/lib/xterm.js', assetLimiter, (req, res) => {
-    res.sendFile(path.join(__dirname, '../node_modules/xterm/lib/xterm.js'));
+    res.sendFile(path.join(__dirname, '../node_modules/xterm/lib/xterm.js'), { dotfiles: 'allow' });
 });
 app.get('/node_modules/xterm-addon-fit/lib/xterm-addon-fit.js', assetLimiter, (req, res) => {
-    res.sendFile(path.join(__dirname, '../node_modules/xterm-addon-fit/lib/xterm-addon-fit.js'));
+    res.sendFile(path.join(__dirname, '../node_modules/xterm-addon-fit/lib/xterm-addon-fit.js'), { dotfiles: 'allow' });
 });
 
 app.use(express.json());
 
-const CONFIG_DIR = path.join(__dirname, '../data');
-
-function isValidKeyPath(keyPath) {
-    if (!keyPath || typeof keyPath !== 'string') return false;
-    const resolvedPath = path.resolve(keyPath);
-    if (resolvedPath.startsWith(CONFIG_DIR)) return false;
-    if (!resolvedPath.includes('/.ssh/') && !resolvedPath.startsWith('/app/keys/')) return false;
-    return true;
+function resolveConfigDir() {
+    if (process.env.DATA_DIR) {
+        return { dir: path.resolve(process.env.DATA_DIR), env: 'Custom (DATA_DIR)' };
+    }
+    if (fs.existsSync('/.dockerenv') || process.env.IS_DOCKER) {
+        return { dir: path.join(__dirname, '../data'), env: 'Docker' };
+    }
+    if (process.env.APPIMAGE || process.env.APPDIR || process.env.DESKTOP_ENV) {
+        const xdgConfig = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+        return { dir: path.join(xdgConfig, 'bastioncc'), env: 'AppImage / Desktop' };
+    }
+    return { dir: path.join(__dirname, '../data'), env: 'Bare-Metal / Local' };
 }
+
+const { dir: CONFIG_DIR, env: activeEnv } = resolveConfigDir();
+if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
+
+console.log(`[Storage] Environment: ${activeEnv}`);
+console.log(`[Storage] Active Vault Directory: ${CONFIG_DIR}`);
+
+
 const AUTH_FILE = path.join(CONFIG_DIR, 'auth.json');
 const DATA_FILE = path.join(CONFIG_DIR, 'servers.json');
 const BANS_FILE = path.join(CONFIG_DIR, 'ban_history.json');
@@ -216,11 +229,7 @@ function decryptPassphrase(encryptedData, pin) {
 
 function resolvePrivateKey(serverConfig, pin) {
     if (serverConfig.encryptedPrivateKey && pin) {
-        const decrypted = decryptPassphrase(serverConfig.encryptedPrivateKey, pin);
-        if (decrypted) return decrypted;
-    }
-    if (serverConfig.privateKeyPath && isValidKeyPath(serverConfig.privateKeyPath)) {
-        try { return fs.readFileSync(path.resolve(serverConfig.privateKeyPath), 'utf8'); } catch(e) { return null; }
+        return decryptPassphrase(serverConfig.encryptedPrivateKey, pin);
     }
     return null;
 }
@@ -415,26 +424,34 @@ io.on('connection', (socket) => {
         const pin = activePins.get(socket.id);
         if (serverData.passphrase && pin) serverData.encryptedPassphrase = encryptPassphrase(serverData.passphrase, pin);
         delete serverData.passphrase;
-        if (serverData.privateKey && pin) {
-            if (serverData.privateKey === 'CLEAR_KEY') {
-                delete serverData.encryptedPrivateKey;
-            } else {
-                serverData.encryptedPrivateKey = encryptPassphrase(serverData.privateKey.trim(), pin);
-            }
+
+        const isClearingKey = serverData.privateKey === 'CLEAR_KEY';
+        if (isClearingKey) {
+            delete serverData.encryptedPrivateKey;
+        } else if (serverData.privateKey && pin) {
+            serverData.encryptedPrivateKey = encryptPassphrase(serverData.privateKey.trim(), pin);
         }
-        delete serverData.privateKey;
-        if (serverData.privateKeyPath && !isValidKeyPath(serverData.privateKeyPath)) {
-            delete serverData.privateKeyPath;
-        }
+        delete serverData.privateKeyPath;
+
         const servers = getServers();
         if (serverData.id) {
             const index = servers.findIndex(s => s.id === serverData.id);
             if (index !== -1) {
-                if (!serverData.encryptedPassphrase && servers[index].encryptedPassphrase) serverData.encryptedPassphrase = servers[index].encryptedPassphrase;
-                if (!serverData.encryptedPrivateKey && servers[index].encryptedPrivateKey && serverData.privateKey !== 'CLEAR_KEY') serverData.encryptedPrivateKey = servers[index].encryptedPrivateKey;
+                if (!serverData.encryptedPassphrase && servers[index].encryptedPassphrase) {
+                    serverData.encryptedPassphrase = servers[index].encryptedPassphrase;
+                }
+                if (!serverData.encryptedPrivateKey && servers[index].encryptedPrivateKey && !isClearingKey) {
+                    serverData.encryptedPrivateKey = servers[index].encryptedPrivateKey;
+                }
                 servers[index] = serverData;
-            } else servers.push(serverData);
-        } else { serverData.id = 'srv_' + Date.now(); servers.push(serverData); }
+            } else {
+                servers.push(serverData);
+            }
+        } else { 
+            serverData.id = 'srv_' + Date.now(); 
+            servers.push(serverData); 
+        }
+        delete serverData.privateKey;
         fs.writeFileSync(DATA_FILE, JSON.stringify(servers, null, 2));
         io.emit('servers-list', getServers());
     });
@@ -1129,4 +1146,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9 Ready on port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.6 Ready on port ${PORT}`));
