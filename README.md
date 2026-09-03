@@ -4,7 +4,7 @@
 
 ## If you do not like AI assisted code then please pass on by, we get it you don't think it's real code just like how my dad stated digital photography is not real photography and look how that turned out (;o)
 
-### The tool is perfect if you manage many VM's, LXC, cloud compute etc and would like to consolidate them all into one place with lightweight yet powerful features built in.
+### The tool is perfect if you manage many VM's, LXC, cloud compute etc and would like to consolidate them all into one "pane of glass" with lightweight yet powerful features built in.
 
 ### Full documentation can be found here > https://docs.bastioncc.cloud
 
