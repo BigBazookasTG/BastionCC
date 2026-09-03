@@ -355,7 +355,7 @@
             <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
             <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
                 <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
-                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9 Changelog</span></div>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.6 Changelog</span></div>
             </div>
         </div>
     </nav>
@@ -542,7 +542,7 @@
 
                 <div class="bg-[#1e1e1e] rounded-lg p-4 border border-slate-700 flex-1 overflow-y-auto shadow-inner min-h-[200px]">
                     <div id="securityTerm" class="font-mono text-sm text-sky-400 whitespace-pre">
-                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9</p>
+                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9.6</p>
                         <p class="text-slate-500">Ready for target acquisition...</p>
                         <p class="text-accent mt-2">> _</p>
                     </div>
@@ -1482,7 +1482,56 @@
                     </div></td>
                 </tr>
             `).join('');
-            grid.querySelectorAll('.docker-btn').forEach(btn => btn.addEventListener('click', () => { const a = btn.dataset.action, c = btn.dataset.container, i = btn.dataset.image; if (a === 'console') execDocker(c); else if (a === 'logs') viewLogs(c); else if (a === 'scan') scanDocker(i); else if (a === 'remove') { socket.emit('docker-action', { action: a, container: c }); } else socket.emit('docker-action', { action: a, container: c }); }));
+            window.__pendingDocker = window.__pendingDocker || {};
+
+            function applyDockerPending(container, action, pBtn) {
+                const row = pBtn ? pBtn.closest('tr') : null;
+                if (row) {
+                    const dot = row.querySelector('.rounded-full');
+                    if (dot) {
+                        dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse';
+                    }
+                    row.querySelectorAll('.docker-btn').forEach(b => {
+                        b.disabled = true;
+                        b.style.opacity = '0.5';
+                        b.style.pointerEvents = 'none';
+                    });
+                }
+                if (pBtn) {
+                    pBtn.innerHTML = '<svg class="w-3.5 h-3.5 animate-spin text-amber-400 inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>';
+                }
+            }
+
+            function notifyDockerAction(msg) {
+                if (typeof showToast === 'function') showToast(msg);
+                else if (typeof toast === 'function') toast(msg);
+            }
+
+            grid.querySelectorAll('.docker-btn').forEach(btn => btn.addEventListener('click', () => {
+                const a = btn.dataset.action, c = btn.dataset.container, i = btn.dataset.image;
+                if (a === 'console') execDocker(c);
+                else if (a === 'logs') viewLogs(c);
+                else if (a === 'scan') scanDocker(i);
+                else {
+                    window.__pendingDocker[c] = { action: a, time: Date.now() };
+                    applyDockerPending(c, a, btn);
+                    notifyDockerAction('Action [' + a.toUpperCase() + '] queued for ' + c + '...');
+                    socket.emit('docker-action', { action: a, container: c });
+                    setTimeout(() => {
+                        delete window.__pendingDocker[c];
+                    }, 5000);
+                }
+            }));
+
+            // Re-apply pending indicators if a background poll re-renders the grid before the action completes
+            Object.entries(window.__pendingDocker).forEach(([name, data]) => {
+                if (Date.now() - data.time < 5000) {
+                    const targetBtn = grid.querySelector('.docker-btn[data-container="' + name + '"][data-action="' + data.action + '"]');
+                    if (targetBtn) applyDockerPending(name, data.action, targetBtn);
+                } else {
+                    delete window.__pendingDocker[name];
+                }
+            });
         }
 
         function viewLogs(c) { document.getElementById('diag-title').innerText = `Logs: ${maskDemoText(c)}`; document.getElementById('diagnostics-modal').classList.remove('hidden'); modalTerm.clear(); setTimeout(() => { try { modalFitAddon.fit(); } catch(e){} }, 150); socket.emit('docker-logs', { container: c }); }
