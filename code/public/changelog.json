@@ -1,8 +1,54 @@
 [
   {
-    "version": "v1.9",
+    "version": "v1.9.6",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
+    "title": "Standalone AppImage Packaging & Runtime Path Resolution",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Standalone AppImage packaging support with bundled Node runtime"
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Dual-path config resolution (~/.config/bastioncc vs /app/data)"
+      },
+      {
+        "tag": "FIX",
+        "text": "Added { dotfiles: 'allow' } to resolve Express 404s on /tmp/.mount_* paths"
+      },
+      {
+        "tag": "PORTABILITY",
+        "text": "Stripped host native C++ addons (cpu-features, *.node) for universal glibc compatibility"
+      }
+    ]
+  },
+  {
+    "version": "v1.9.4",
+    "borderColor": "border-slate-600",
+    "title": "Cross-Platform Portability & Pure Vault Hardening",
+    "changes": [
+      {
+        "tag": "SECURITY",
+        "text": "Pure In-Vault Key Confinement: Fully decommissioned legacy isValidKeyPath filesystem fallback routines, isolating SSH handshakes strictly to in-memory AES-256-GCM Master PIN decryption."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Decoupled Key Deletion: Hardened CLEAR_KEY sentinel handling so vault keys can be purged independently of active PIN states and protected against merge resurrects."
+      },
+      {
+        "tag": "PORTABILITY",
+        "text": "Universal Runtime Portability: Added dynamic resolveConfigDir supporting Docker (/.dockerenv volume mounts) and Linux desktop/AppImage (XDG ~/.config/bastioncc)."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Container Action Visual Cue Suite: Integrated immediate button micro-spinners, pulse state transitions, and toast notifications across container actions."
+      }
+    ]
+  },
+  {
+    "version": "v1.9",
+    "borderColor": "border-slate-600",
     "title": "Encrypted In-Vault SSH Keys, Drag & Drop Upload & CodeQL Hardening",
     "changes": [
       {
@@ -300,7 +346,7 @@
   },
   {
     "version": "v1.5.0",
-    "borderColor": "border-sky-500",
+    "borderColor": "border-slate-600",
     "title": "Hub-and-Spoke Auditing, Web Header Policy Matrix & Multi-Server Pivots",
     "changes": [
       {
@@ -319,7 +365,7 @@
   },
   {
     "version": "v1.4.0",
-    "borderColor": "border-indigo-500",
+    "borderColor": "border-slate-600",
     "title": "Live Docker Telemetry, Container Controls & Vulnerability Scanner",
     "changes": [
       {
@@ -338,7 +384,7 @@
   },
   {
     "version": "v1.3.0",
-    "borderColor": "border-emerald-500",
+    "borderColor": "border-slate-600",
     "title": "Full Remote File Explorer, Chunked Stream Uploads & Downloads",
     "changes": [
       {
@@ -357,7 +403,7 @@
   },
   {
     "version": "v1.2.0",
-    "borderColor": "border-amber-500",
+    "borderColor": "border-slate-600",
     "title": "Interactive Xterm.js Shell & Configurable Macro Automation",
     "changes": [
       {
@@ -376,7 +422,7 @@
   },
   {
     "version": "v1.1.0",
-    "borderColor": "border-rose-500",
+    "borderColor": "border-slate-600",
     "title": "AES-256-GCM Vault Encryption, Path Traversal Defense & Emergency Lock",
     "changes": [
       {
@@ -395,7 +441,7 @@
   },
   {
     "version": "v1.0.0",
-    "borderColor": "border-slate-500",
+    "borderColor": "border-slate-600",
     "title": "Initial Production Release: Multi-Server Linux Dashboard",
     "changes": [
       {
@@ -414,7 +460,7 @@
   },
   {
     "version": "v0.3.0 – v0.9.0",
-    "borderColor": "border-slate-700",
+    "borderColor": "border-slate-600",
     "title": "Host Telemetry & Systemd Log Streaming Prototype",
     "changes": [
       {
