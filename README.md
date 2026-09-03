@@ -4,8 +4,6 @@
 
 ## If you do not like AI assisted code then please pass on by, we get it you don't think it's real code just like how my dad stated digital photography is not real photography and look how that turned out (;o)
 
-### This is a simple tool that i built for myself utilising both Google Gemini Pro and Claude AI Agents.
-
 ### The tool is perfect if you manage many VM's, LXC, cloud compute etc and would like to consolidate them all into one place with lightweight yet powerful features built in.
 
 ### Full documentation can be found here > https://docs.bastioncc.cloud
@@ -19,7 +17,7 @@
 
  ![picture](/images/addserver.png)
  
-### Xterm.js terminal with copy / paste functionality
+### Xterm.js terminal
 
 ![picture](/images/xterm.png)
 
