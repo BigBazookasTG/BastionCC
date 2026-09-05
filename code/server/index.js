@@ -403,7 +403,7 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
-    let sshClient = null; let sftpSession = null; let activeShellStream = null; 
+    let sshClient = null; global.getActiveSSH = () => sshClient; let sftpSession = null; let activeShellStream = null; 
     let statsInterval = null; let dockerInterval = null; const activeUploads = new Map();
     let prevCpuTicks = null;
 
@@ -1146,4 +1146,364 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.6 Ready on port ${PORT}`));
+/* BASTIONCC_V198_BACKEND_START */
+const _activeDeployments = new Map();
+
+function _resolveSsh() {
+  if (typeof global.getActiveSSH === 'function') {
+    const active = global.getActiveSSH();
+    if (active) return active;
+  }
+  if (typeof sshClient !== 'undefined' && sshClient) return sshClient;
+  return null;
+}
+
+function _runSshCmd(ssh, cmd) {
+  return new Promise((resolve, reject) => {
+    ssh.exec(cmd, (err, stream) => {
+      if (err) return reject(err);
+      let stdout = '';
+      let stderr = '';
+      stream.on('data', d => { stdout += d.toString(); });
+      stream.stderr.on('data', d => { stderr += d.toString(); });
+      stream.on('close', code => {
+        if (code !== 0) {
+          const e = new Error(`Command failed (exit ${code}): ${stderr || stdout}`);
+          e.code = code;
+          e.stderr = stderr;
+          e.stdout = stdout;
+          return reject(e);
+        }
+        resolve(stdout.trim());
+      });
+    });
+  });
+}
+
+async function _getContainerConfig(ssh, containerId) {
+  const cleanId = String(containerId).replace(/^\//, '').trim();
+  const raw = await _runSshCmd(ssh, `docker inspect ${cleanId}`);
+  const [inspect] = JSON.parse(raw);
+  if (!inspect) throw new Error('Container not found on host.');
+
+  const ports = [];
+  if (inspect.HostConfig && inspect.HostConfig.PortBindings) {
+    for (const [cPortProto, bindings] of Object.entries(inspect.HostConfig.PortBindings)) {
+      const [cPort, proto] = cPortProto.split('/');
+      (bindings || []).forEach(b => {
+        ports.push({
+          hostIp: b.HostIp || '0.0.0.0',
+          hostPort: b.HostPort,
+          containerPort: cPort,
+          protocol: proto || 'tcp'
+        });
+      });
+    }
+  }
+
+  const env = (inspect.Config && inspect.Config.Env ? inspect.Config.Env : []).map(e => {
+    const idx = e.indexOf('=');
+    return {
+      key: idx !== -1 ? e.substring(0, idx) : e,
+      value: idx !== -1 ? e.substring(idx + 1) : ''
+    };
+  });
+
+  const binds = (inspect.HostConfig && inspect.HostConfig.Binds ? inspect.HostConfig.Binds : []).map(b => {
+    const parts = b.split(':');
+    return {
+      source: parts[0],
+      destination: parts[1],
+      mode: parts[2] || 'rw'
+    };
+  });
+
+  // Extract networks and static/assigned IPAM configurations
+  const networks = [];
+  if (inspect.NetworkSettings && inspect.NetworkSettings.Networks) {
+    for (const [netName, netConf] of Object.entries(inspect.NetworkSettings.Networks)) {
+      const explicitIp = (netConf.IPAMConfig && netConf.IPAMConfig.IPv4Address) || null;
+      const assignedIp = (netConf.IPAddress && netName !== 'bridge') ? netConf.IPAddress : null;
+      networks.push({
+        name: netName,
+        ipv4: explicitIp || assignedIp
+      });
+    }
+  }
+
+  const labels = (inspect.Config && inspect.Config.Labels) || {};
+
+  return {
+    id: inspect.Id,
+    name: inspect.Name.replace(/^\//, ''),
+    currentImage: (inspect.Config && inspect.Config.Image) || '',
+    env,
+    ports,
+    binds,
+    restartPolicy: (inspect.HostConfig && inspect.HostConfig.RestartPolicy && inspect.HostConfig.RestartPolicy.Name) || 'no',
+    privileged: !!(inspect.HostConfig && inspect.HostConfig.Privileged),
+    capAdd: (inspect.HostConfig && inspect.HostConfig.CapAdd) || [],
+    networks,
+    primaryNetwork: networks[0] || { name: 'bridge', ipv4: null },
+    secondaryNetworks: networks.slice(1),
+    labels,
+    isCompose: !!labels['com.docker.compose.project'],
+    composeProject: labels['com.docker.compose.project'] || '',
+    composeService: labels['com.docker.compose.service'] || ''
+  };
+}
+
+async function _scanImageWithGrype(ssh, imageTag) {
+  try {
+    const raw = await _runSshCmd(ssh, `grype ${imageTag} -o json`);
+    const parsed = JSON.parse(raw);
+    const matches = parsed.matches || [];
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+    const flagged = [];
+
+    for (const m of matches) {
+      const sev = ((m.vulnerability && m.vulnerability.severity) || 'unknown').toLowerCase();
+      if (counts[sev] !== undefined) counts[sev]++;
+      if (['critical', 'high', 'medium'].includes(sev)) {
+        flagged.push({
+          id: m.vulnerability.id,
+          severity: m.vulnerability.severity,
+          package: (m.artifact && m.artifact.name) || 'unknown',
+          version: (m.artifact && m.artifact.version) || 'unknown',
+          fix: (m.vulnerability && m.vulnerability.fix && m.vulnerability.fix.versions && m.vulnerability.fix.versions[0]) || 'None'
+        });
+      }
+    }
+
+    return {
+      passed: flagged.length === 0,
+      counts,
+      flaggedCves: flagged.slice(0, 30)
+    };
+  } catch (err) {
+    if (err.message && err.message.includes('command not found')) {
+      throw new Error('Grype binary is not installed on remote server path.');
+    }
+    throw err;
+  }
+}
+
+function _buildCreateCmd(cfg, newImage) {
+  const args = [`--name ${cfg.name}`];
+  if (cfg.restartPolicy && cfg.restartPolicy !== 'no') args.push(`--restart ${cfg.restartPolicy}`);
+  if (cfg.privileged) args.push('--privileged');
+  (cfg.capAdd || []).forEach(c => args.push(`--cap-add ${c}`));
+
+  if (cfg.labels) {
+    for (const [k, v] of Object.entries(cfg.labels)) {
+      const cleanVal = (v || '').replace(/"/g, '\\"').replace(/\$/g, '\\$');
+      args.push(`--label "${k}=${cleanVal}"`);
+    }
+  }
+
+  (cfg.env || []).forEach(e => {
+    if (e.key && e.key.trim()) {
+      const cleanVal = (e.value || '').replace(/"/g, '\\"').replace(/\$/g, '\\$');
+      args.push(`-e "${e.key.trim()}=${cleanVal}"`);
+    }
+  });
+
+  (cfg.ports || []).forEach(p => {
+    if (p.hostPort && p.containerPort) {
+      args.push(`-p ${p.hostIp ? p.hostIp + ':' : ''}${p.hostPort}:${p.containerPort}/${p.protocol || 'tcp'}`);
+    }
+  });
+
+  (cfg.binds || []).forEach(b => {
+    if (b.source && b.destination) {
+      args.push(`-v "${b.source}:${b.destination}:${b.mode || 'rw'}"`);
+    }
+  });
+
+  // Re-bind preserved primary network and static IPv4
+  if (cfg.primaryNetwork && cfg.primaryNetwork.name) {
+    args.push(`--network ${cfg.primaryNetwork.name}`);
+    if (cfg.primaryNetwork.ipv4 && cfg.primaryNetwork.name !== 'bridge') {
+      args.push(`--ip ${cfg.primaryNetwork.ipv4}`);
+    }
+  }
+
+  args.push(newImage);
+  return `docker create ${args.join(' ')}`;
+}
+
+// API Routes
+app.get('/api/docker/containers/:id/edit-config', async (req, res) => {
+  try {
+    const ssh = _resolveSsh();
+    if (!ssh) return res.status(400).json({ error: 'No active SSH session detected. Ensure BastionCC is connected.' });
+    const cfg = await _getContainerConfig(ssh, req.params.id);
+    res.json(cfg);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/docker/containers/:id/deploy', async (req, res) => {
+  try {
+    const ssh = _resolveSsh();
+    if (!ssh) return res.status(400).json({ error: 'No active SSH session detected.' });
+
+    const depId = 'dep_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const origConfig = await _getContainerConfig(ssh, req.params.id);
+    const merged = {
+      ...origConfig,
+      env: (req.body && req.body.env) || origConfig.env,
+      ports: (req.body && req.body.ports) || origConfig.ports,
+      binds: (req.body && req.body.binds) || origConfig.binds,
+      restartPolicy: (req.body && req.body.restartPolicy) || origConfig.restartPolicy,
+      privileged: (req.body && req.body.privileged !== undefined) ? req.body.privileged : origConfig.privileged
+    };
+
+    _activeDeployments.set(depId, {
+      id: depId,
+      containerId: req.params.id,
+      ssh,
+      config: merged,
+      newImage: (req.body && req.body.newImage ? req.body.newImage : '').trim(),
+      scanWithGrype: !!(req.body && req.body.scanWithGrype),
+      overrideResolve: null
+    });
+
+    res.json({ deploymentId: depId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/docker/recreate/stream/:depId', (req, res) => {
+  const dep = _activeDeployments.get(req.params.depId);
+  if (!dep) return res.status(404).send('Deployment expired or not found');
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const emit = (step, status, message, extra = {}) => {
+    res.write(`data: ${JSON.stringify({ step, status, message, ...extra })}\n\n`);
+  };
+
+  (async () => {
+    const ssh = dep.ssh;
+    const cfg = dep.config;
+    const img = dep.newImage;
+    const backupName = `${cfg.name}_rollback_tmp`;
+
+    try {
+      emit('pull', 'in_progress', `Pulling ${img} on host...`);
+      await _runSshCmd(ssh, `docker pull ${img}`);
+      emit('pull', 'completed', `Image ${img} pulled successfully.`);
+
+      if (dep.scanWithGrype) {
+        emit('scan', 'in_progress', 'Running Grype vulnerability check...');
+        const scan = await _scanImageWithGrype(ssh, img);
+        if (!scan.passed) {
+          emit('scan', 'soft_blocked', 'Vulnerabilities detected. Awaiting decision.', {
+            cveCounts: scan.counts,
+            flaggedCves: scan.flaggedCves
+          });
+
+          const approved = await new Promise(resolve => { dep.overrideResolve = resolve; });
+          if (!approved) {
+            emit('scan', 'aborted', 'Deployment aborted. Purging pulled image...');
+            await _runSshCmd(ssh, `docker rmi ${img}`).catch(() => {});
+            emit('pipeline', 'aborted', 'Cancelled safely. Original container remains untouched.');
+            return;
+          }
+          emit('scan', 'completed', 'Vulnerabilities overridden by user. Proceeding.');
+        } else {
+          emit('scan', 'completed', 'Security gate passed cleanly (No Med/High/Crit CVEs).');
+        }
+      } else {
+        emit('scan', 'skipped', 'Vulnerability scan bypassed (Direct update).');
+      }
+
+      emit('swap', 'in_progress', `Renaming ${cfg.name} -> ${backupName}...`);
+      await _runSshCmd(ssh, `docker rename ${cfg.name} ${backupName}`);
+
+      emit('swap', 'in_progress', 'Stopping original instance...');
+      await _runSshCmd(ssh, `docker stop ${backupName}`);
+
+      // Free IP leases in Docker IPAM to allow new container to bind the static IP
+      emit('swap', 'in_progress', 'Releasing static IP leases from backup instance...');
+      for (const net of cfg.networks) {
+        if (net.name !== 'bridge') {
+          await _runSshCmd(ssh, `docker network disconnect ${net.name} ${backupName}`).catch(() => {});
+        }
+      }
+
+      emit('swap', 'in_progress', 'Creating new container instance with preserved network configuration...');
+      await _runSshCmd(ssh, _buildCreateCmd(cfg, img));
+
+      if (cfg.secondaryNetworks && cfg.secondaryNetworks.length > 0) {
+        for (const net of cfg.secondaryNetworks) {
+          emit('swap', 'in_progress', `Connecting network ${net.name}...`);
+          const ipArg = (net.ipv4 && net.name !== 'bridge') ? `--ip ${net.ipv4}` : '';
+          await _runSshCmd(ssh, `docker network connect ${ipArg} ${net.name} ${cfg.name}`);
+        }
+      }
+
+      emit('swap', 'in_progress', 'Starting new container...');
+      await _runSshCmd(ssh, `docker start ${cfg.name}`);
+      emit('swap', 'completed', 'Container started. Running 10s health watchdog.');
+
+      for (let sec = 1; sec <= 10; sec++) {
+        await new Promise(r => setTimeout(r, 1000));
+        emit('watchdog', 'in_progress', `Monitoring container health (${11 - sec}s remaining)...`, { remaining: 10 - sec });
+
+        const rawSt = await _runSshCmd(ssh, `docker inspect ${cfg.name}`);
+        const [st] = JSON.parse(rawSt);
+        const running = st && st.State && st.State.Running;
+        const restarting = st && st.State && st.State.Restarting;
+        const code = st && st.State ? st.State.ExitCode : -1;
+
+        if (!running || restarting || code !== 0) {
+          emit('watchdog', 'failed', `Container crashed at second ${sec} (Exit Code: ${code}). Rolling back...`);
+          let logs = '';
+          try { logs = await _runSshCmd(ssh, `docker logs --tail 25 ${cfg.name}`); } catch (_) {}
+
+          // Emergency Rollback
+          await _runSshCmd(ssh, `docker rm -f ${cfg.name}`).catch(() => {});
+
+          for (const net of cfg.networks) {
+            if (net.name !== 'bridge') {
+              const ipArg = net.ipv4 ? `--ip ${net.ipv4}` : '';
+              await _runSshCmd(ssh, `docker network connect ${ipArg} ${net.name} ${backupName}`).catch(() => {});
+            }
+          }
+
+          await _runSshCmd(ssh, `docker start ${backupName}`);
+          await _runSshCmd(ssh, `docker rename ${backupName} ${cfg.name}`);
+
+          throw new Error(`Container failed 10s health check (Exit code ${code}). Original container and network configuration restored.\n\nCrash Logs:\n${logs}`);
+        }
+      }
+
+      emit('watchdog', 'completed', '10-second stability check verified.');
+      await _runSshCmd(ssh, `docker rm ${backupName}`).catch(() => {});
+      emit('pipeline', 'completed', 'Update completed successfully!');
+    } catch (err) {
+      emit('pipeline', 'failed', err.message);
+    } finally {
+      _activeDeployments.delete(req.params.depId);
+      res.end();
+    }
+  })();
+});
+
+app.post('/api/docker/recreate/:depId/decision', (req, res) => {
+  const dep = _activeDeployments.get(req.params.depId);
+  if (!dep || !dep.overrideResolve) {
+    return res.status(404).json({ error: 'No deployment awaiting decision.' });
+  }
+  dep.overrideResolve(req.body && req.body.decision === 'proceed');
+  res.json({ ok: true });
+});
+/* BASTIONCC_V198_BACKEND_END */
+
+server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8 Ready on port ${PORT}`));
