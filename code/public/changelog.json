@@ -1,8 +1,32 @@
 [
   {
-    "version": "v1.9.8",
+    "version": "v1.9.8.10",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
+    "title": "Security Hardening & CodeQL Sanitization",
+    "changes": [
+      {
+        "tag": "SECURITY",
+        "text": "Mitigated CWE-78 with strict regex allowlists for container IDs and image tags"
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Resolved CWE-116 by replacing double-quote escaping with POSIX single-quote shQuote encapsulation"
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Enforced strict integer casting and protocol allowlists on port bindings"
+      },
+      {
+        "tag": "STABILITY",
+        "text": "Shielded environment variables and labels containing $, backticks, and special characters from shell expansion"
+      }
+    ]
+  },
+  {
+    "version": "v1.9.8",
+    "badge": "STABLE",
+    "borderColor": "border-slate-700",
     "title": "Safe-Pull & Scan Pipeline, Network IPAM Preservation & Safety Controls",
     "changes": [
       {
