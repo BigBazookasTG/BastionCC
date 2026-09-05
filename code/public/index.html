@@ -67,7 +67,149 @@
         @keyframes slideInDown { 0% { transform: translateY(-100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
         .toast-animate { animation: slideInDown 0.25s ease-out forwards; }
         .jvm-tooltip { background: #020617 !important; border: 1px solid #f97316 !important; border-radius: 8px !important; color: #f8fafc !important; font-family: monospace !important; padding: 10px 14px !important; box-shadow: 0 10px 25px rgba(0,0,0,0.7) !important; pointer-events: none !important; z-index: 9999 !important; }
-    </style>
+    /* BASTIONCC_V198_STYLES_START */
+.sp-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(8, 11, 15, 0.85);
+  backdrop-filter: blur(5px); display: flex; align-items: center;
+  justify-content: center; z-index: 10000;
+}
+.sp-modal-container {
+  background: #13171f; border: 1px solid #242c38; border-radius: 10px;
+  width: 70vw; min-width: 800px; max-width: 1350px; height: 85vh; max-height: 90vh;
+  display: flex; flex-direction: column; color: #e2e8f0;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.7);
+}
+.sp-modal-header {
+  padding: 14px 24px; border-bottom: 1px solid #242c38;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.sp-header-title-group { display: flex; align-items: center; gap: 12px; }
+.sp-header-title-group h3 { margin: 0; font-size: 17px; font-weight: 600; }
+.sp-badge { background: #1e293b; padding: 3px 10px; border-radius: 4px; font-size: 12px; color: #94a3b8; }
+.sp-btn-close { background: transparent; border: none; color: #94a3b8; font-size: 20px; cursor: pointer; }
+.sp-scroller { padding: 22px 26px; overflow-y: auto; flex: 1; }
+.sp-form-section { margin-bottom: 16px; }
+.sp-form-section label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 5px; font-weight: 500; }
+.sp-input-text, .sp-input-select {
+  width: 100%; background: #0d1117; border: 1px solid #2d3748;
+  color: #f1f5f9; padding: 8px 12px; border-radius: 5px; font-size: 13px; box-sizing: border-box;
+}
+.sp-hint { font-size: 11px; color: #64748b; margin-top: 4px; display: block; }
+.sp-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.sp-dynamic-list { display: flex; flex-direction: column; gap: 8px; }
+.sp-grid-row { display: flex; gap: 8px; align-items: center; }
+.sp-btn-xs { font-size: 11px; padding: 3px 10px; border-radius: 4px; background: #1e293b; border: 1px solid #334155; color: #cbd5e1; cursor: pointer; }
+.sp-btn-del { background: transparent; border: none; color: #ef4444; cursor: pointer; padding: 4px; }
+.sp-grid-2 { display: flex; gap: 16px; margin-bottom: 14px; }
+.sp-form-group { flex: 1; }
+.sp-check-wrap { display: flex; align-items: center; margin-top: 22px; }
+.sp-check-label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+
+/* Option 2 Compose Warning Banner */
+.sp-compose-banner {
+  background: #201606; border: 1px solid #d97706; border-radius: 6px;
+  padding: 14px 16px; margin-bottom: 16px;
+}
+.sp-compose-header { display: flex; align-items: center; gap: 8px; color: #fbbf24; font-size: 13px; font-weight: 600; }
+.sp-compose-desc { font-size: 12px; color: #d1d5db; margin: 6px 0 10px; line-height: 1.4; }
+.sp-compose-desc code { background: #111827; padding: 2px 6px; border-radius: 3px; color: #f59e0b; font-size: 11px; }
+.sp-compose-ack-label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #fef3c7; cursor: pointer; user-select: none; }
+
+/* Orange Toggle */
+.sp-toggle-wrapper {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 18px 0 14px; padding: 12px 16px; background: #0d1117;
+  border: 1px solid #242c38; border-radius: 6px;
+}
+.sp-toggle-label { font-size: 13px; color: #94a3b8; font-weight: 500; }
+.sp-orange-toggle {
+  position: relative; display: flex; background: #1a222d;
+  border: 1px solid #2d3748; border-radius: 20px; padding: 2px; user-select: none;
+}
+.sp-orange-toggle input[type="radio"] { display: none; }
+.sp-toggle-opt {
+  position: relative; z-index: 2; display: inline-flex; align-items: center;
+  gap: 6px; padding: 6px 16px; font-size: 12px; font-weight: 600;
+  color: #94a3b8; cursor: pointer; transition: color 0.2s;
+}
+.sp-toggle-slider {
+  position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px);
+  background: #ea580c; border-radius: 16px; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 10px rgba(234, 88, 12, 0.45); z-index: 1;
+}
+#sp-mode-direct:checked ~ .sp-toggle-slider { transform: translateX(0); }
+#sp-mode-scan:checked ~ .sp-toggle-slider { transform: translateX(100%); }
+#sp-mode-direct:checked + label, #sp-mode-scan:checked + label { color: #ffffff; }
+
+.sp-modal-footer, .sp-sb-actions, .sp-stepper-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
+.sp-btn-sec { background: #1e293b; border: 1px solid #334155; color: #cbd5e1; padding: 8px 18px; border-radius: 5px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.sp-btn-orange { background: #ea580c; border: none; color: #fff; padding: 8px 22px; border-radius: 5px; font-weight: 600; cursor: pointer; font-size: 13px; }
+.sp-btn-orange:hover { background: #f97316; }
+.sp-btn-danger { background: transparent; border: 1px solid #ef4444; color: #ef4444; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+
+/* Stepper */
+.sp-stepper-track { display: flex; flex-direction: column; gap: 16px; }
+.sp-step-node { display: flex; gap: 14px; }
+.sp-step-ind {
+  width: 24px; height: 24px; border-radius: 50%; background: #1e293b;
+  border: 1px solid #475569; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: #94a3b8;
+}
+.sp-step-node.in_progress .sp-step-ind { border-color: #ea580c; color: #ea580c; }
+.sp-step-node.completed .sp-step-ind { border-color: #22c55e; background: #22c55e; color: #fff; }
+.sp-step-node.failed .sp-step-ind, .sp-step-node.aborted .sp-step-ind { border-color: #ef4444; background: #ef4444; color: #fff; }
+.sp-step-node.soft_blocked .sp-step-ind { border-color: #f59e0b; color: #f59e0b; }
+.sp-step-node.skipped .sp-step-ind { border-color: #64748b; color: #64748b; }
+.sp-step-body h4 { margin: 0; font-size: 14px; font-weight: 600; }
+.sp-step-body p { margin: 3px 0 0; font-size: 12px; color: #64748b; }
+.sp-soft-block { margin-top: 12px; background: #1a1512; border: 1px solid #7c2d12; border-radius: 6px; padding: 14px; }
+.sp-sb-header { display: flex; justify-content: space-between; align-items: center; }
+.sp-sb-badges { display: flex; gap: 8px; }
+.sp-tag-crit { background: #7f1d1d; color: #fca5a5; font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+.sp-tag-high { background: #7c2d12; color: #fdba74; font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+.sp-tag-med { background: #713f12; color: #fde047; font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+.sp-cve-list { max-height: 180px; overflow-y: auto; background: #0d1117; border: 1px solid #242c38; border-radius: 4px; margin: 10px 0; padding: 8px 12px; font-family: monospace; font-size: 12px; line-height: 1.6; }
+.sp-crash-box { margin-top: 16px; background: #050608; border: 1px solid #ef4444; border-radius: 6px; padding: 12px; }
+.sp-crash-box pre { margin: 8px 0 0; font-family: monospace; font-size: 11px; color: #fca5a5; max-height: 180px; overflow-y: auto; }
+.sp-spinner { width: 12px; height: 12px; border: 2px solid #ea580c; border-top-color: transparent; border-radius: 50%; animation: spSpin 0.8s linear infinite; }
+@keyframes spSpin { to { transform: rotate(360deg); } }
+
+/* Container Deletion Confirmation Modal Styles */
+.sp-delete-card {
+  background: #13171f; border: 1px solid #374151; border-radius: 10px;
+  width: 500px; max-width: 92vw; display: flex; flex-direction: column; color: #e2e8f0;
+  box-shadow: 0 25px 60px rgba(0,0,0,0.8); overflow: hidden;
+}
+.sp-delete-header {
+  padding: 16px 20px; border-bottom: 1px solid #242c38;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.sp-delete-title-group { display: flex; align-items: center; gap: 10px; }
+.sp-delete-title-group h3 { margin: 0; font-size: 16px; font-weight: 600; color: #f87171; }
+.sp-delete-icon { font-size: 18px; }
+.sp-delete-body { padding: 20px; font-size: 13px; line-height: 1.5; }
+.sp-delete-msg { margin: 0 0 8px; color: #f1f5f9; }
+.sp-delete-target-badge {
+  font-family: ui-monospace, monospace; background: #271717; color: #fca5a5;
+  border: 1px solid #7f1d1d; padding: 2px 7px; border-radius: 4px; font-weight: 600;
+}
+.sp-delete-submsg { margin: 0 0 16px; color: #94a3b8; font-size: 12px; }
+.sp-storage-notice {
+  background: #061c14; border: 1px solid #059669; border-radius: 6px;
+  padding: 12px 14px; color: #a7f3d0; font-size: 12px; line-height: 1.4;
+}
+.sp-storage-notice-title {
+  display: flex; align-items: center; gap: 6px; font-weight: 600;
+  color: #34d399; margin-bottom: 4px;
+}
+.sp-btn-danger-solid {
+  background: #dc2626; border: none; color: #fff; padding: 8px 18px;
+  border-radius: 5px; font-weight: 600; cursor: pointer; font-size: 13px;
+  transition: background 0.2s;
+}
+.sp-btn-danger-solid:hover { background: #ef4444; }
+/* BASTIONCC_V198_STYLES_END */
+</style>
 </head>
 <body class="bg-slate-100 text-slate-800 dark:bg-darkBg dark:text-slate-100 h-screen flex overflow-hidden">
 
@@ -355,7 +497,7 @@
             <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
             <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
                 <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
-                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.6 Changelog</span></div>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8 Changelog</span></div>
             </div>
         </div>
     </nav>
@@ -542,7 +684,7 @@
 
                 <div class="bg-[#1e1e1e] rounded-lg p-4 border border-slate-700 flex-1 overflow-y-auto shadow-inner min-h-[200px]">
                     <div id="securityTerm" class="font-mono text-sm text-sky-400 whitespace-pre">
-                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9.6</p>
+                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9.8</p>
                         <p class="text-slate-500">Ready for target acquisition...</p>
                         <p class="text-accent mt-2">> _</p>
                     </div>
@@ -1477,6 +1619,9 @@
                         <button data-action="console" data-container="${escapeHtml(p.Names)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 hover:bg-indigo-500 hover:text-white transition font-mono text-xs font-bold leading-none">>_</button>
                         <button data-action="logs" data-container="${escapeHtml(p.Names)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 hover:bg-purple-500 hover:text-white transition"><svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></button>
                         <button data-action="scan" data-image="${escapeHtml(p.Image)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 hover:bg-cyan-500 hover:text-white transition"><svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg></button>
+                        <button data-action="edit" data-container="${escapeHtml(p.Names)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 hover:bg-orange-500 hover:text-white transition" title="Safe-Pull & Scan / Edit">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                        </button>
                         <span class="inline-block w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1"></span>
                         <button data-action="remove" data-container="${escapeHtml(p.Names)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white transition"><svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
                     </div></td>
@@ -1512,6 +1657,8 @@
                 if (a === 'console') execDocker(c);
                 else if (a === 'logs') viewLogs(c);
                 else if (a === 'scan') scanDocker(i);
+                else if (a === 'edit') openEditModal(c);
+                else if (a === 'remove') openDeleteModal(c);
                 else {
                     window.__pendingDocker[c] = { action: a, time: Date.now() };
                     applyDockerPending(c, a, btn);
@@ -1725,6 +1872,507 @@
             reader.onload = (e) => { socket.emit('sftp-upload-chunk', { remotePath, chunk: e.target.result }); offset += 65536; if (offset < file.size) readNextChunk(); else socket.emit('sftp-upload-end', { remotePath }); };
             function readNextChunk() { reader.readAsArrayBuffer(file.slice(offset, offset + 65536)); } readNextChunk();
         });
-    </script>
+    /* BASTIONCC_V198_SCRIPT_START */
+let _spCurContainerId = null;
+let _spEvtSource = null;
+let _spCurDepId = null;
+let _spPendingDeleteContainer = null;
+
+// Delete Safety Gate
+window.openDeleteModal = function(containerName) {
+  _spPendingDeleteContainer = containerName;
+  const targetEl = document.getElementById('sp-delete-target');
+  if (targetEl) targetEl.textContent = containerName;
+  const modal = document.getElementById('container-delete-modal');
+  if (modal) modal.style.display = 'flex';
+};
+
+window.closeDeleteModal = function() {
+  _spPendingDeleteContainer = null;
+  const modal = document.getElementById('container-delete-modal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.executeContainerDelete = function() {
+  if (!_spPendingDeleteContainer) return;
+  const c = _spPendingDeleteContainer;
+  closeDeleteModal();
+
+  window.__pendingDocker = window.__pendingDocker || {};
+  window.__pendingDocker[c] = { action: 'remove', time: Date.now() };
+
+  const targetBtn = document.querySelector(`.docker-btn[data-container="${c}"][data-action="remove"]`);
+  if (typeof applyDockerPending === 'function') applyDockerPending(c, 'remove', targetBtn);
+  if (typeof notifyDockerAction === 'function') notifyDockerAction('Action [REMOVE] queued for ' + c + '...');
+
+  if (typeof socket !== 'undefined' && socket) {
+    socket.emit('docker-action', { action: 'remove', container: c });
+  }
+
+  setTimeout(() => {
+    if (window.__pendingDocker && window.__pendingDocker[c]) {
+      delete window.__pendingDocker[c];
+    }
+  }, 5000);
+};
+
+// Safe-Pull Modal Controller
+window.openEditModal = async function(containerId) {
+  const cleanId = String(containerId).replace(/^\//, '').trim();
+  _spCurContainerId = cleanId;
+
+  document.getElementById('sp-view-form').style.display = 'block';
+  document.getElementById('sp-view-stepper').style.display = 'none';
+  document.getElementById('container-edit-modal').style.display = 'flex';
+
+  try {
+    const res = await fetch(`/api/docker/containers/${encodeURIComponent(cleanId)}/edit-config`);
+    const cfg = await res.json();
+    if (cfg.error) throw new Error(cfg.error);
+
+    document.getElementById('sp-modal-title').textContent = 'Edit: ' + cfg.name;
+    document.getElementById('sp-modal-cur-img').textContent = cfg.currentImage;
+    document.getElementById('sp-image-input').value = cfg.currentImage;
+    document.getElementById('sp-restart-policy').value = cfg.restartPolicy || 'no';
+    document.getElementById('sp-privileged').checked = !!cfg.privileged;
+
+    const compWarn = document.getElementById('sp-compose-warning');
+    const compAck = document.getElementById('sp-compose-ack');
+    const deployBtn = document.getElementById('sp-btn-deploy');
+
+    if (cfg.isCompose) {
+      document.getElementById('sp-compose-stack').textContent = cfg.composeProject || 'unknown';
+      document.getElementById('sp-compose-service').textContent = cfg.composeService || 'service';
+      compWarn.style.display = 'block';
+      compAck.checked = false;
+      deployBtn.disabled = true;
+      deployBtn.style.opacity = '0.4';
+      deployBtn.style.cursor = 'not-allowed';
+    } else {
+      compWarn.style.display = 'none';
+      deployBtn.disabled = false;
+      deployBtn.style.opacity = '1';
+      deployBtn.style.cursor = 'pointer';
+    }
+
+    _spRenderEnvs(cfg.env || []);
+    _spRenderPorts(cfg.ports || []);
+    _spRenderMounts(cfg.binds || []);
+  } catch (err) {
+    alert('Failed to load container config: ' + err.message);
+    closeEditModal();
+  }
+};
+
+window.spToggleComposeAck = function() {
+  const compAck = document.getElementById('sp-compose-ack');
+  const deployBtn = document.getElementById('sp-btn-deploy');
+  const allowed = compAck.checked;
+  deployBtn.disabled = !allowed;
+  deployBtn.style.opacity = allowed ? '1' : '0.4';
+  deployBtn.style.cursor = allowed ? 'pointer' : 'not-allowed';
+};
+
+window.closeEditModal = function() {
+  if (_spEvtSource) { _spEvtSource.close(); _spEvtSource = null; }
+  document.getElementById('container-edit-modal').style.display = 'none';
+};
+
+function _spRenderEnvs(envs) {
+  const el = document.getElementById('sp-env-list');
+  el.innerHTML = '';
+  envs.forEach(e => addEnvRow(e.key, e.value));
+}
+window.addEnvRow = function(k = '', v = '') {
+  const row = document.createElement('div');
+  row.className = 'sp-grid-row';
+  row.innerHTML = `
+    <input type="text" class="sp-input-text sp-env-k" style="flex: 1;" placeholder="KEY" value="${k}">
+    <input type="text" class="sp-input-text sp-env-v" style="flex: 2;" placeholder="VALUE" value="${v}">
+    <button type="button" class="sp-btn-del" onclick="this.parentElement.remove()">✕</button>
+  `;
+  document.getElementById('sp-env-list').appendChild(row);
+};
+
+function _spRenderPorts(ports) {
+  const el = document.getElementById('sp-port-list');
+  el.innerHTML = '';
+  ports.forEach(p => addPortRow(p.hostPort, p.containerPort, p.protocol));
+}
+window.addPortRow = function(h = '', c = '', proto = 'tcp') {
+  const row = document.createElement('div');
+  row.className = 'sp-grid-row';
+  row.innerHTML = `
+    <input type="number" class="sp-input-text sp-port-h" style="flex: 1;" placeholder="Host Port" value="${h}">
+    <input type="number" class="sp-input-text sp-port-c" style="flex: 1;" placeholder="Container Port" value="${c}">
+    <select class="sp-input-select sp-port-p" style="width: 90px;">
+      <option value="tcp" ${proto === 'tcp' ? 'selected' : ''}>tcp</option>
+      <option value="udp" ${proto === 'udp' ? 'selected' : ''}>udp</option>
+    </select>
+    <button type="button" class="sp-btn-del" onclick="this.parentElement.remove()">✕</button>
+  `;
+  document.getElementById('sp-port-list').appendChild(row);
+};
+
+function _spRenderMounts(mounts) {
+  const el = document.getElementById('sp-mount-list');
+  el.innerHTML = '';
+  mounts.forEach(m => addMountRow(m.source, m.destination, m.mode));
+}
+window.addMountRow = function(src = '', dst = '', mode = 'rw') {
+  const row = document.createElement('div');
+  row.className = 'sp-grid-row';
+  row.innerHTML = `
+    <input type="text" class="sp-input-text sp-mnt-src" style="flex: 2;" placeholder="/host/path" value="${src}">
+    <input type="text" class="sp-input-text sp-mnt-dst" style="flex: 2;" placeholder="/container/path" value="${dst}">
+    <select class="sp-input-select sp-mnt-m" style="width: 85px;">
+      <option value="rw" ${mode === 'rw' ? 'selected' : ''}>rw</option>
+      <option value="ro" ${mode === 'ro' ? 'selected' : ''}>ro</option>
+    </select>
+    <button type="button" class="sp-btn-del" onclick="this.parentElement.remove()">✕</button>
+  `;
+  document.getElementById('sp-mount-list').appendChild(row);
+};
+
+window.submitContainerDeployment = async function() {
+  const newImage = document.getElementById('sp-image-input').value.trim();
+  if (!newImage) return alert('Target Docker image tag is required.');
+
+  const scanWithGrype = document.getElementById('sp-mode-scan').checked;
+  const env = Array.from(document.querySelectorAll('#sp-env-list .sp-grid-row')).map(r => ({
+    key: r.querySelector('.sp-env-k').value.trim(),
+    value: r.querySelector('.sp-env-v').value
+  })).filter(e => e.key);
+
+  const ports = Array.from(document.querySelectorAll('#sp-port-list .sp-grid-row')).map(r => ({
+    hostPort: r.querySelector('.sp-port-h').value.trim(),
+    containerPort: r.querySelector('.sp-port-c').value.trim(),
+    protocol: r.querySelector('.sp-port-p').value
+  })).filter(p => p.hostPort && p.containerPort);
+
+  const binds = Array.from(document.querySelectorAll('#sp-mount-list .sp-grid-row')).map(r => ({
+    source: r.querySelector('.sp-mnt-src').value.trim(),
+    destination: r.querySelector('.sp-mnt-dst').value.trim(),
+    mode: r.querySelector('.sp-mnt-m').value
+  })).filter(m => m.source && m.destination);
+
+  const payload = {
+    newImage,
+    scanWithGrype,
+    env,
+    ports,
+    binds,
+    restartPolicy: document.getElementById('sp-restart-policy').value,
+    privileged: document.getElementById('sp-privileged').checked
+  };
+
+  document.getElementById('sp-view-form').style.display = 'none';
+  document.getElementById('sp-view-stepper').style.display = 'block';
+  _spResetStepper();
+
+  const res = await fetch(`/api/docker/containers/${encodeURIComponent(_spCurContainerId)}/deploy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (data.error) {
+    alert('Deployment failed: ' + data.error);
+    closeEditModal();
+    return;
+  }
+
+  _spCurDepId = data.deploymentId;
+  _spStartSse(data.deploymentId);
+};
+
+function _spStartSse(depId) {
+  _spEvtSource = new EventSource(`/api/docker/recreate/stream/${depId}`);
+  _spEvtSource.onmessage = e => {
+    const d = JSON.parse(e.data);
+    _spHandleEvent(d);
+  };
+  _spEvtSource.onerror = () => {
+    if (_spEvtSource) _spEvtSource.close();
+  };
+}
+
+function _spHandleEvent(evt) {
+  const { step, status, message } = evt;
+  if (step === 'pull') _spSetStep('sp-node-pull', 'sp-msg-pull', status, message);
+  if (step === 'scan') {
+    _spSetStep('sp-node-scan', 'sp-msg-scan', status, message);
+    if (status === 'soft_blocked') _spShowSoftBlock(evt.cveCounts, evt.flaggedCves);
+  }
+  if (step === 'swap') _spSetStep('sp-node-swap', 'sp-msg-swap', status, message);
+  if (step === 'watchdog') _spSetStep('sp-node-watchdog', 'sp-msg-watchdog', status, message);
+  if (step === 'pipeline') {
+    if (status === 'completed') {
+      document.getElementById('sp-stepper-footer').style.display = 'flex';
+      if (_spEvtSource) _spEvtSource.close();
+      if (typeof refreshContainers === 'function') refreshContainers();
+    } else if (status === 'failed' || status === 'aborted') {
+      if (status === 'failed') {
+        document.getElementById('sp-crash-drawer').style.display = 'block';
+        document.getElementById('sp-crash-logs').textContent = message;
+      }
+      document.getElementById('sp-stepper-footer').style.display = 'flex';
+      if (_spEvtSource) _spEvtSource.close();
+    }
+  }
+}
+
+function _spSetStep(nodeId, msgId, status, message) {
+  const node = document.getElementById(nodeId);
+  const msgEl = document.getElementById(msgId);
+  const ind = node.querySelector('.sp-step-ind');
+  node.className = 'sp-step-node ' + status;
+  msgEl.textContent = message;
+
+  if (status === 'in_progress') ind.innerHTML = '<div class="sp-spinner"></div>';
+  else if (status === 'completed') ind.innerHTML = '✓';
+  else if (status === 'failed' || status === 'aborted') ind.innerHTML = '✕';
+  else if (status === 'soft_blocked') ind.innerHTML = '⚠';
+  else if (status === 'skipped') ind.innerHTML = '–';
+}
+
+function _spShowSoftBlock(counts, flagged) {
+  document.getElementById('sp-cnt-crit').textContent = ((counts && counts.critical) || 0) + ' Crit';
+  document.getElementById('sp-cnt-high').textContent = ((counts && counts.high) || 0) + ' High';
+  document.getElementById('sp-cnt-med').textContent = ((counts && counts.medium) || 0) + ' Med';
+
+  const box = document.getElementById('sp-cve-items');
+  box.innerHTML = (flagged || []).map(c => `
+    <div><strong>${c.id}</strong> [${c.severity}] - ${c.package} (${c.version}) &rarr; Fix: ${c.fix}</div>
+  `).join('');
+
+  document.getElementById('sp-soft-block-card').style.display = 'block';
+}
+
+window.sendOverrideDecision = async function(decision) {
+  document.getElementById('sp-soft-block-card').style.display = 'none';
+  await fetch(`/api/docker/recreate/${_spCurDepId}/decision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decision })
+  });
+};
+
+function _spResetStepper() {
+  ['sp-node-pull', 'sp-node-scan', 'sp-node-swap', 'sp-node-watchdog'].forEach(id => {
+    const node = document.getElementById(id);
+    node.className = 'sp-step-node';
+    node.querySelector('.sp-step-ind').innerHTML = '○';
+  });
+  document.getElementById('sp-msg-pull').textContent = 'Waiting...';
+  document.getElementById('sp-msg-scan').textContent = 'Waiting...';
+  document.getElementById('sp-msg-swap').textContent = 'Waiting...';
+  document.getElementById('sp-msg-watchdog').textContent = 'Waiting...';
+  document.getElementById('sp-soft-block-card').style.display = 'none';
+  document.getElementById('sp-crash-drawer').style.display = 'none';
+  document.getElementById('sp-stepper-footer').style.display = 'none';
+}
+/* BASTIONCC_V198_SCRIPT_END */
+</script>
+<!-- BASTIONCC_V198_MODALS_START -->
+<!-- Container Edit & Safe-Pull Modal (v1.9.8) -->
+<div id="container-edit-modal" class="sp-modal-backdrop" style="display: none;">
+  <div class="sp-modal-container">
+    <div class="sp-modal-header">
+      <div class="sp-header-title-group">
+        <h3 id="sp-modal-title">Edit Container</h3>
+        <span class="sp-badge" id="sp-modal-cur-img">loading...</span>
+      </div>
+      <button class="sp-btn-close" onclick="closeEditModal()">✕</button>
+    </div>
+
+    <!-- Form View -->
+    <div id="sp-view-form" class="sp-scroller">
+      <div id="sp-compose-warning" class="sp-compose-banner" style="display: none;">
+        <div class="sp-compose-header">
+          <span>⚠️</span>
+          <strong>Compose-Managed Container (<span id="sp-compose-stack"></span> / <span id="sp-compose-service"></span>)</strong>
+        </div>
+        <p class="sp-compose-desc">
+          Updating this container directly creates <strong>Configuration Drift</strong> from your <code>docker-compose.yml</code>. Changes will be overwritten on the next <code>docker compose up</code>.
+        </p>
+        <label class="sp-compose-ack-label">
+          <input type="checkbox" id="sp-compose-ack" onchange="window.spToggleComposeAck()">
+          <span>I understand this container is managed by Docker Compose</span>
+        </label>
+      </div>
+
+      <div class="sp-form-section">
+        <label for="sp-image-input">Docker Image & Tag</label>
+        <input type="text" id="sp-image-input" class="sp-input-text" placeholder="e.g., redis:7.4-alpine" required>
+        <span class="sp-hint">Edit repository or version tag directly.</span>
+      </div>
+
+      <div class="sp-form-section">
+        <div class="sp-title-row">
+          <label>Environment Variables</label>
+          <button type="button" class="sp-btn-xs" onclick="addEnvRow()">+ Add Variable</button>
+        </div>
+        <div id="sp-env-list" class="sp-dynamic-list"></div>
+      </div>
+
+      <div class="sp-form-section">
+        <div class="sp-title-row">
+          <label>Port Mappings</label>
+          <button type="button" class="sp-btn-xs" onclick="addPortRow()">+ Add Port</button>
+        </div>
+        <div id="sp-port-list" class="sp-dynamic-list"></div>
+      </div>
+
+      <div class="sp-form-section">
+        <div class="sp-title-row">
+          <label>Volume / Bind Mounts</label>
+          <button type="button" class="sp-btn-xs" onclick="addMountRow()">+ Add Mount</button>
+        </div>
+        <div id="sp-mount-list" class="sp-dynamic-list"></div>
+      </div>
+
+      <div class="sp-grid-2">
+        <div class="sp-form-group">
+          <label for="sp-restart-policy">Restart Policy</label>
+          <select id="sp-restart-policy" class="sp-input-select">
+            <option value="no">no</option>
+            <option value="always">always</option>
+            <option value="unless-stopped">unless-stopped</option>
+            <option value="on-failure">on-failure</option>
+          </select>
+        </div>
+        <div class="sp-form-group sp-check-wrap">
+          <label class="sp-check-label">
+            <input type="checkbox" id="sp-privileged">
+            <span>Privileged Container</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="sp-toggle-wrapper">
+        <label class="sp-toggle-label">Deployment Mode</label>
+        <div class="sp-orange-toggle">
+          <input type="radio" id="sp-mode-direct" name="spDeployMode" value="direct">
+          <label for="sp-mode-direct" class="sp-toggle-opt">Update</label>
+
+          <input type="radio" id="sp-mode-scan" name="spDeployMode" value="scan" checked>
+          <label for="sp-mode-scan" class="sp-toggle-opt">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            Scan & Update
+          </label>
+
+          <div class="sp-toggle-slider"></div>
+        </div>
+      </div>
+
+      <div class="sp-modal-footer">
+        <button type="button" class="sp-btn-sec" onclick="closeEditModal()">Cancel</button>
+        <button type="button" id="sp-btn-deploy" class="sp-btn-orange" onclick="submitContainerDeployment()">Deploy Changes</button>
+      </div>
+    </div>
+
+    <!-- Stepper View -->
+    <div id="sp-view-stepper" class="sp-scroller" style="display: none;">
+      <div class="sp-stepper-track">
+        <div class="sp-step-node" id="sp-node-pull">
+          <div class="sp-step-ind"><div class="sp-spinner"></div></div>
+          <div class="sp-step-body">
+            <h4>1. Pulling Image Layers</h4>
+            <p id="sp-msg-pull">Connecting to Docker daemon...</p>
+          </div>
+        </div>
+
+        <div class="sp-step-node" id="sp-node-scan">
+          <div class="sp-step-ind">○</div>
+          <div class="sp-step-body">
+            <h4>2. Vulnerability Scan</h4>
+            <p id="sp-msg-scan">Waiting for pull to complete...</p>
+            
+            <div id="sp-soft-block-card" class="sp-soft-block" style="display: none;">
+              <div class="sp-sb-header">
+                <strong>⚠️ Vulnerabilities Detected</strong>
+                <div class="sp-sb-badges">
+                  <span class="sp-tag-crit" id="sp-cnt-crit">0 Crit</span>
+                  <span class="sp-tag-high" id="sp-cnt-high">0 High</span>
+                  <span class="sp-tag-med" id="sp-cnt-med">0 Med</span>
+                </div>
+              </div>
+              <div class="sp-cve-list" id="sp-cve-items"></div>
+              <div class="sp-sb-actions">
+                <button type="button" class="sp-btn-danger" onclick="sendOverrideDecision('abort')">Abort & Discard</button>
+                <button type="button" class="sp-btn-orange" onclick="sendOverrideDecision('proceed')">Proceed Anyway (Risk)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sp-step-node" id="sp-node-swap">
+          <div class="sp-step-ind">○</div>
+          <div class="sp-step-body">
+            <h4>3. Atomic Swap</h4>
+            <p id="sp-msg-swap">Waiting...</p>
+          </div>
+        </div>
+
+        <div class="sp-step-node" id="sp-node-watchdog">
+          <div class="sp-step-ind">○</div>
+          <div class="sp-step-body">
+            <h4>4. Health Watchdog (10s)</h4>
+            <p id="sp-msg-watchdog">Waiting...</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="sp-crash-drawer" class="sp-crash-box" style="display: none;">
+        <strong>Rollback Triggered - Crash Output:</strong>
+        <pre id="sp-crash-logs"></pre>
+      </div>
+
+      <div class="sp-stepper-footer" id="sp-stepper-footer" style="display: none;">
+        <button type="button" class="sp-btn-sec" onclick="closeEditModal()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Container Delete Confirmation Modal (v1.9.8) -->
+<div id="container-delete-modal" class="sp-modal-backdrop" style="display: none;">
+  <div class="sp-delete-card">
+    <div class="sp-delete-header">
+      <div class="sp-delete-title-group">
+        <span class="sp-delete-icon">⚠️</span>
+        <h3>Confirm Container Deletion</h3>
+      </div>
+      <button class="sp-btn-close" onclick="closeDeleteModal()">✕</button>
+    </div>
+    <div class="sp-delete-body">
+      <p class="sp-delete-msg">
+        Are you sure you want to delete container <span id="sp-delete-target" class="sp-delete-target-badge"></span>?
+      </p>
+      <p class="sp-delete-submsg">
+        This action will stop and permanently remove the container instance and its ephemeral writable layer.
+      </p>
+      <div class="sp-storage-notice">
+        <div class="sp-storage-notice-title">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+          </svg>
+          <span>Persistent Storage is Safe</span>
+        </div>
+        <p style="margin: 0;">
+          Persistent volumes, host bind mounts, and mapped storage will <strong>NOT</strong> be deleted and will remain safely intact on the host.
+        </p>
+      </div>
+    </div>
+    <div class="sp-modal-footer" style="padding: 14px 20px; border-top: 1px solid #242c38; margin: 0; background: #0d1117;">
+      <button type="button" class="sp-btn-sec" onclick="closeDeleteModal()">Cancel</button>
+      <button type="button" id="sp-btn-confirm-delete" class="sp-btn-danger-solid" onclick="executeContainerDelete()">Delete Container</button>
+    </div>
+  </div>
+</div>
+<!-- BASTIONCC_V198_MODALS_END -->
 </body>
 </html>
