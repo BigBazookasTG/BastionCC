@@ -1149,6 +1149,25 @@ const PORT = process.env.PORT || 3000;
 /* BASTIONCC_V198_BACKEND_START */
 const _activeDeployments = new Map();
 
+// Strict Allowlist Sanitizers for CodeQL Taint-Tracking Neutralization
+const _SAFE_ID_REGEX = /^[a-zA-Z0-9_.-]+$/;
+const _SAFE_IMG_REGEX = /^[a-zA-Z0-9_.:/@-]+$/;
+const _SAFE_ENV_KEY_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+const _SAFE_IPV4_REGEX = /^(\d{1,3}\.){3}\d{1,3}$/;
+
+function _isValidContainerId(id) {
+  return typeof id === 'string' && _SAFE_ID_REGEX.test(id.trim());
+}
+
+function _isValidImageTag(img) {
+  return typeof img === 'string' && _SAFE_IMG_REGEX.test(img.trim());
+}
+
+// POSIX Single-Quote Encapsulation (Completely disables Bash $, `, and \ evaluation)
+function _shQuote(val) {
+  return "'" + String(val).replace(/'/g, "'\\''") + "'";
+}
+
 function _resolveSsh() {
   if (typeof global.getActiveSSH === 'function') {
     const active = global.getActiveSSH();
@@ -1182,7 +1201,11 @@ function _runSshCmd(ssh, cmd) {
 
 async function _getContainerConfig(ssh, containerId) {
   const cleanId = String(containerId).replace(/^\//, '').trim();
-  const raw = await _runSshCmd(ssh, `docker inspect ${cleanId}`);
+  if (!_isValidContainerId(cleanId)) {
+    throw new Error('Invalid container identifier format.');
+  }
+
+  const raw = await _runSshCmd(ssh, `docker inspect ${_shQuote(cleanId)}`);
   const [inspect] = JSON.parse(raw);
   if (!inspect) throw new Error('Container not found on host.');
 
@@ -1191,12 +1214,16 @@ async function _getContainerConfig(ssh, containerId) {
     for (const [cPortProto, bindings] of Object.entries(inspect.HostConfig.PortBindings)) {
       const [cPort, proto] = cPortProto.split('/');
       (bindings || []).forEach(b => {
-        ports.push({
-          hostIp: b.HostIp || '0.0.0.0',
-          hostPort: b.HostPort,
-          containerPort: cPort,
-          protocol: proto || 'tcp'
-        });
+        const hP = parseInt(b.HostPort, 10);
+        const cP = parseInt(cPort, 10);
+        if (hP > 0 && cP > 0) {
+          ports.push({
+            hostIp: _SAFE_IPV4_REGEX.test(b.HostIp || '') ? b.HostIp : '0.0.0.0',
+            hostPort: String(hP),
+            containerPort: String(cP),
+            protocol: proto === 'udp' ? 'udp' : 'tcp'
+          });
+        }
       });
     }
   }
@@ -1214,20 +1241,21 @@ async function _getContainerConfig(ssh, containerId) {
     return {
       source: parts[0],
       destination: parts[1],
-      mode: parts[2] || 'rw'
+      mode: parts[2] === 'ro' ? 'ro' : 'rw'
     };
   });
 
-  // Extract networks and static/assigned IPAM configurations
   const networks = [];
   if (inspect.NetworkSettings && inspect.NetworkSettings.Networks) {
     for (const [netName, netConf] of Object.entries(inspect.NetworkSettings.Networks)) {
-      const explicitIp = (netConf.IPAMConfig && netConf.IPAMConfig.IPv4Address) || null;
-      const assignedIp = (netConf.IPAddress && netName !== 'bridge') ? netConf.IPAddress : null;
-      networks.push({
-        name: netName,
-        ipv4: explicitIp || assignedIp
-      });
+      if (_SAFE_ID_REGEX.test(netName)) {
+        const explicitIp = (netConf.IPAMConfig && _SAFE_IPV4_REGEX.test(netConf.IPAMConfig.IPv4Address)) ? netConf.IPAMConfig.IPv4Address : null;
+        const assignedIp = (netName !== 'bridge' && _SAFE_IPV4_REGEX.test(netConf.IPAddress)) ? netConf.IPAddress : null;
+        networks.push({
+          name: netName,
+          ipv4: explicitIp || assignedIp
+        });
+      }
     }
   }
 
@@ -1254,8 +1282,12 @@ async function _getContainerConfig(ssh, containerId) {
 }
 
 async function _scanImageWithGrype(ssh, imageTag) {
+  if (!_isValidImageTag(imageTag)) {
+    throw new Error('Invalid image tag provided for Grype scan.');
+  }
+
   try {
-    const raw = await _runSshCmd(ssh, `grype ${imageTag} -o json`);
+    const raw = await _runSshCmd(ssh, `grype ${_shQuote(imageTag)} -o json`);
     const parsed = JSON.parse(raw);
     const matches = parsed.matches || [];
     const counts = { critical: 0, high: 0, medium: 0, low: 0 };
@@ -1289,55 +1321,74 @@ async function _scanImageWithGrype(ssh, imageTag) {
 }
 
 function _buildCreateCmd(cfg, newImage) {
-  const args = [`--name ${cfg.name}`];
-  if (cfg.restartPolicy && cfg.restartPolicy !== 'no') args.push(`--restart ${cfg.restartPolicy}`);
+  if (!_isValidContainerId(cfg.name)) throw new Error('Invalid container name format.');
+  if (!_isValidImageTag(newImage)) throw new Error('Invalid target image format.');
+
+  const args = [`--name ${_shQuote(cfg.name)}`];
+
+  const validRestarts = ['always', 'unless-stopped', 'on-failure'];
+  if (validRestarts.includes(cfg.restartPolicy)) {
+    args.push(`--restart ${cfg.restartPolicy}`);
+  }
   if (cfg.privileged) args.push('--privileged');
-  (cfg.capAdd || []).forEach(c => args.push(`--cap-add ${c}`));
+
+  (cfg.capAdd || []).forEach(c => {
+    if (/^[a-zA-Z0-9_]+$/.test(c)) args.push(`--cap-add ${c}`);
+  });
 
   if (cfg.labels) {
     for (const [k, v] of Object.entries(cfg.labels)) {
-      const cleanVal = (v || '').replace(/"/g, '\\"').replace(/\$/g, '\\$');
-      args.push(`--label "${k}=${cleanVal}"`);
+      if (_SAFE_ID_REGEX.test(k)) {
+        args.push(`--label ${_shQuote(k + '=' + (v || ''))}`);
+      }
     }
   }
 
   (cfg.env || []).forEach(e => {
-    if (e.key && e.key.trim()) {
-      const cleanVal = (e.value || '').replace(/"/g, '\\"').replace(/\$/g, '\\$');
-      args.push(`-e "${e.key.trim()}=${cleanVal}"`);
+    if (e.key && _SAFE_ENV_KEY_REGEX.test(e.key.trim())) {
+      args.push(`-e ${_shQuote(e.key.trim() + '=' + (e.value || ''))}`);
     }
   });
 
   (cfg.ports || []).forEach(p => {
-    if (p.hostPort && p.containerPort) {
-      args.push(`-p ${p.hostIp ? p.hostIp + ':' : ''}${p.hostPort}:${p.containerPort}/${p.protocol || 'tcp'}`);
+    const hP = parseInt(p.hostPort, 10);
+    const cP = parseInt(p.containerPort, 10);
+    const proto = p.protocol === 'udp' ? 'udp' : 'tcp';
+    const hIp = (p.hostIp && _SAFE_IPV4_REGEX.test(p.hostIp)) ? `${p.hostIp}:` : '';
+    if (hP > 0 && hP <= 65535 && cP > 0 && cP <= 65535) {
+      args.push(`-p ${hIp}${hP}:${cP}/${proto}`);
     }
   });
 
   (cfg.binds || []).forEach(b => {
     if (b.source && b.destination) {
-      args.push(`-v "${b.source}:${b.destination}:${b.mode || 'rw'}"`);
+      const mode = b.mode === 'ro' ? 'ro' : 'rw';
+      args.push(`-v ${_shQuote(b.source + ':' + b.destination + ':' + mode)}`);
     }
   });
 
-  // Re-bind preserved primary network and static IPv4
-  if (cfg.primaryNetwork && cfg.primaryNetwork.name) {
-    args.push(`--network ${cfg.primaryNetwork.name}`);
-    if (cfg.primaryNetwork.ipv4 && cfg.primaryNetwork.name !== 'bridge') {
+  if (cfg.primaryNetwork && _SAFE_ID_REGEX.test(cfg.primaryNetwork.name)) {
+    args.push(`--network ${_shQuote(cfg.primaryNetwork.name)}`);
+    if (cfg.primaryNetwork.ipv4 && cfg.primaryNetwork.name !== 'bridge' && _SAFE_IPV4_REGEX.test(cfg.primaryNetwork.ipv4)) {
       args.push(`--ip ${cfg.primaryNetwork.ipv4}`);
     }
   }
 
-  args.push(newImage);
+  args.push(_shQuote(newImage));
   return `docker create ${args.join(' ')}`;
 }
 
-// API Routes
+// API Routes with Strict Input Sanitization
 app.get('/api/docker/containers/:id/edit-config', async (req, res) => {
   try {
+    const containerId = String(req.params.id).replace(/^\//, '').trim();
+    if (!_isValidContainerId(containerId)) {
+      return res.status(400).json({ error: 'Invalid container identifier format.' });
+    }
+
     const ssh = _resolveSsh();
-    if (!ssh) return res.status(400).json({ error: 'No active SSH session detected. Ensure BastionCC is connected.' });
-    const cfg = await _getContainerConfig(ssh, req.params.id);
+    if (!ssh) return res.status(400).json({ error: 'No active SSH session detected.' });
+    const cfg = await _getContainerConfig(ssh, containerId);
     res.json(cfg);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1346,26 +1397,54 @@ app.get('/api/docker/containers/:id/edit-config', async (req, res) => {
 
 app.post('/api/docker/containers/:id/deploy', async (req, res) => {
   try {
+    const containerId = String(req.params.id).replace(/^\//, '').trim();
+    if (!_isValidContainerId(containerId)) {
+      return res.status(400).json({ error: 'Invalid container identifier format.' });
+    }
+
+    const newImage = String((req.body && req.body.newImage) || '').trim();
+    if (!_isValidImageTag(newImage)) {
+      return res.status(400).json({ error: 'Invalid Docker image tag format.' });
+    }
+
     const ssh = _resolveSsh();
     if (!ssh) return res.status(400).json({ error: 'No active SSH session detected.' });
 
     const depId = 'dep_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-    const origConfig = await _getContainerConfig(ssh, req.params.id);
+    const origConfig = await _getContainerConfig(ssh, containerId);
+
+    const safeEnv = Array.isArray(req.body && req.body.env)
+      ? req.body.env.filter(e => e && e.key && _SAFE_ENV_KEY_REGEX.test(String(e.key).trim()))
+      : origConfig.env;
+
+    const safePorts = Array.isArray(req.body && req.body.ports)
+      ? req.body.ports.map(p => ({
+          hostPort: parseInt(p.hostPort, 10),
+          containerPort: parseInt(p.containerPort, 10),
+          protocol: p.protocol === 'udp' ? 'udp' : 'tcp',
+          hostIp: (p.hostIp && _SAFE_IPV4_REGEX.test(p.hostIp)) ? p.hostIp : '0.0.0.0'
+        })).filter(p => p.hostPort > 0 && p.hostPort <= 65535 && p.containerPort > 0 && p.containerPort <= 65535)
+      : origConfig.ports;
+
+    const safeBinds = Array.isArray(req.body && req.body.binds)
+      ? req.body.binds.filter(b => b && b.source && b.destination)
+      : origConfig.binds;
+
     const merged = {
       ...origConfig,
-      env: (req.body && req.body.env) || origConfig.env,
-      ports: (req.body && req.body.ports) || origConfig.ports,
-      binds: (req.body && req.body.binds) || origConfig.binds,
-      restartPolicy: (req.body && req.body.restartPolicy) || origConfig.restartPolicy,
-      privileged: (req.body && req.body.privileged !== undefined) ? req.body.privileged : origConfig.privileged
+      env: safeEnv,
+      ports: safePorts,
+      binds: safeBinds,
+      restartPolicy: ['always', 'unless-stopped', 'on-failure'].includes(req.body && req.body.restartPolicy) ? req.body.restartPolicy : origConfig.restartPolicy,
+      privileged: (req.body && req.body.privileged !== undefined) ? !!req.body.privileged : origConfig.privileged
     };
 
     _activeDeployments.set(depId, {
       id: depId,
-      containerId: req.params.id,
+      containerId,
       ssh,
       config: merged,
-      newImage: (req.body && req.body.newImage ? req.body.newImage : '').trim(),
+      newImage,
       scanWithGrype: !!(req.body && req.body.scanWithGrype),
       overrideResolve: null
     });
@@ -1377,8 +1456,13 @@ app.post('/api/docker/containers/:id/deploy', async (req, res) => {
 });
 
 app.get('/api/docker/recreate/stream/:depId', (req, res) => {
-  const dep = _activeDeployments.get(req.params.depId);
-  if (!dep) return res.status(404).send('Deployment expired or not found');
+  const cleanDepId = String(req.params.depId || '').trim();
+  if (!_SAFE_ID_REGEX.test(cleanDepId)) {
+    return res.status(400).send('Invalid deployment identifier.');
+  }
+
+  const dep = _activeDeployments.get(cleanDepId);
+  if (!dep) return res.status(404).send('Deployment expired or not found.');
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -1396,7 +1480,7 @@ app.get('/api/docker/recreate/stream/:depId', (req, res) => {
 
     try {
       emit('pull', 'in_progress', `Pulling ${img} on host...`);
-      await _runSshCmd(ssh, `docker pull ${img}`);
+      await _runSshCmd(ssh, `docker pull ${_shQuote(img)}`);
       emit('pull', 'completed', `Image ${img} pulled successfully.`);
 
       if (dep.scanWithGrype) {
@@ -1411,7 +1495,7 @@ app.get('/api/docker/recreate/stream/:depId', (req, res) => {
           const approved = await new Promise(resolve => { dep.overrideResolve = resolve; });
           if (!approved) {
             emit('scan', 'aborted', 'Deployment aborted. Purging pulled image...');
-            await _runSshCmd(ssh, `docker rmi ${img}`).catch(() => {});
+            await _runSshCmd(ssh, `docker rmi ${_shQuote(img)}`).catch(() => {});
             emit('pipeline', 'aborted', 'Cancelled safely. Original container remains untouched.');
             return;
           }
@@ -1424,16 +1508,15 @@ app.get('/api/docker/recreate/stream/:depId', (req, res) => {
       }
 
       emit('swap', 'in_progress', `Renaming ${cfg.name} -> ${backupName}...`);
-      await _runSshCmd(ssh, `docker rename ${cfg.name} ${backupName}`);
+      await _runSshCmd(ssh, `docker rename ${_shQuote(cfg.name)} ${_shQuote(backupName)}`);
 
       emit('swap', 'in_progress', 'Stopping original instance...');
-      await _runSshCmd(ssh, `docker stop ${backupName}`);
+      await _runSshCmd(ssh, `docker stop ${_shQuote(backupName)}`);
 
-      // Free IP leases in Docker IPAM to allow new container to bind the static IP
       emit('swap', 'in_progress', 'Releasing static IP leases from backup instance...');
       for (const net of cfg.networks) {
-        if (net.name !== 'bridge') {
-          await _runSshCmd(ssh, `docker network disconnect ${net.name} ${backupName}`).catch(() => {});
+        if (net.name !== 'bridge' && _SAFE_ID_REGEX.test(net.name)) {
+          await _runSshCmd(ssh, `docker network disconnect ${_shQuote(net.name)} ${_shQuote(backupName)}`).catch(() => {});
         }
       }
 
@@ -1442,21 +1525,23 @@ app.get('/api/docker/recreate/stream/:depId', (req, res) => {
 
       if (cfg.secondaryNetworks && cfg.secondaryNetworks.length > 0) {
         for (const net of cfg.secondaryNetworks) {
-          emit('swap', 'in_progress', `Connecting network ${net.name}...`);
-          const ipArg = (net.ipv4 && net.name !== 'bridge') ? `--ip ${net.ipv4}` : '';
-          await _runSshCmd(ssh, `docker network connect ${ipArg} ${net.name} ${cfg.name}`);
+          if (_SAFE_ID_REGEX.test(net.name)) {
+            emit('swap', 'in_progress', `Connecting network ${net.name}...`);
+            const ipArg = (net.ipv4 && net.name !== 'bridge' && _SAFE_IPV4_REGEX.test(net.ipv4)) ? `--ip ${net.ipv4}` : '';
+            await _runSshCmd(ssh, `docker network connect ${ipArg} ${_shQuote(net.name)} ${_shQuote(cfg.name)}`);
+          }
         }
       }
 
       emit('swap', 'in_progress', 'Starting new container...');
-      await _runSshCmd(ssh, `docker start ${cfg.name}`);
+      await _runSshCmd(ssh, `docker start ${_shQuote(cfg.name)}`);
       emit('swap', 'completed', 'Container started. Running 10s health watchdog.');
 
       for (let sec = 1; sec <= 10; sec++) {
         await new Promise(r => setTimeout(r, 1000));
         emit('watchdog', 'in_progress', `Monitoring container health (${11 - sec}s remaining)...`, { remaining: 10 - sec });
 
-        const rawSt = await _runSshCmd(ssh, `docker inspect ${cfg.name}`);
+        const rawSt = await _runSshCmd(ssh, `docker inspect ${_shQuote(cfg.name)}`);
         const [st] = JSON.parse(rawSt);
         const running = st && st.State && st.State.Running;
         const restarting = st && st.State && st.State.Restarting;
@@ -1465,39 +1550,39 @@ app.get('/api/docker/recreate/stream/:depId', (req, res) => {
         if (!running || restarting || code !== 0) {
           emit('watchdog', 'failed', `Container crashed at second ${sec} (Exit Code: ${code}). Rolling back...`);
           let logs = '';
-          try { logs = await _runSshCmd(ssh, `docker logs --tail 25 ${cfg.name}`); } catch (_) {}
+          try { logs = await _runSshCmd(ssh, `docker logs --tail 25 ${_shQuote(cfg.name)}`); } catch (_) {}
 
-          // Emergency Rollback
-          await _runSshCmd(ssh, `docker rm -f ${cfg.name}`).catch(() => {});
+          await _runSshCmd(ssh, `docker rm -f ${_shQuote(cfg.name)}`).catch(() => {});
 
           for (const net of cfg.networks) {
-            if (net.name !== 'bridge') {
-              const ipArg = net.ipv4 ? `--ip ${net.ipv4}` : '';
-              await _runSshCmd(ssh, `docker network connect ${ipArg} ${net.name} ${backupName}`).catch(() => {});
+            if (net.name !== 'bridge' && _SAFE_ID_REGEX.test(net.name)) {
+              const ipArg = (net.ipv4 && _SAFE_IPV4_REGEX.test(net.ipv4)) ? `--ip ${net.ipv4}` : '';
+              await _runSshCmd(ssh, `docker network connect ${ipArg} ${_shQuote(net.name)} ${_shQuote(backupName)}`).catch(() => {});
             }
           }
 
-          await _runSshCmd(ssh, `docker start ${backupName}`);
-          await _runSshCmd(ssh, `docker rename ${backupName} ${cfg.name}`);
+          await _runSshCmd(ssh, `docker start ${_shQuote(backupName)}`);
+          await _runSshCmd(ssh, `docker rename ${_shQuote(backupName)} ${_shQuote(cfg.name)}`);
 
           throw new Error(`Container failed 10s health check (Exit code ${code}). Original container and network configuration restored.\n\nCrash Logs:\n${logs}`);
         }
       }
 
       emit('watchdog', 'completed', '10-second stability check verified.');
-      await _runSshCmd(ssh, `docker rm ${backupName}`).catch(() => {});
+      await _runSshCmd(ssh, `docker rm ${_shQuote(backupName)}`).catch(() => {});
       emit('pipeline', 'completed', 'Update completed successfully!');
     } catch (err) {
       emit('pipeline', 'failed', err.message);
     } finally {
-      _activeDeployments.delete(req.params.depId);
+      _activeDeployments.delete(cleanDepId);
       res.end();
     }
   })();
 });
 
 app.post('/api/docker/recreate/:depId/decision', (req, res) => {
-  const dep = _activeDeployments.get(req.params.depId);
+  const cleanDepId = String(req.params.depId || '').trim();
+  const dep = _activeDeployments.get(cleanDepId);
   if (!dep || !dep.overrideResolve) {
     return res.status(404).json({ error: 'No deployment awaiting decision.' });
   }
@@ -1506,4 +1591,4 @@ app.post('/api/docker/recreate/:depId/decision', (req, res) => {
 });
 /* BASTIONCC_V198_BACKEND_END */
 
-server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8 Ready on port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8.10 Ready on port ${PORT}`));
