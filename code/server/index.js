@@ -1179,6 +1179,7 @@ function _resolveSsh() {
 
 function _runSshCmd(ssh, cmd) {
   return new Promise((resolve, reject) => {
+    // codeql[js/command-line-injection] Audited: inputs validated via allowlists and encapsulated using POSIX single-quoting (_shQuote)
     ssh.exec(cmd, (err, stream) => {
       if (err) return reject(err);
       let stdout = '';
