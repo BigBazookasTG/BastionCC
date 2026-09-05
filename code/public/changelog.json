@@ -1,8 +1,40 @@
 [
   {
-    "version": "v1.9.6",
+    "version": "v1.9.8",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
+    "title": "Safe-Pull & Scan Pipeline, Network IPAM Preservation & Safety Controls",
+    "changes": [
+      {
+        "tag": "SECURITY",
+        "text": "Safe-Pull & Scan deployment pipeline with live Grype vulnerability checking and soft-block override gate"
+      },
+      {
+        "tag": "WATCHDOG",
+        "text": "10-Second post-swap health watchdog with automatic container rollback and crash log capture"
+      },
+      {
+        "tag": "SAFETY",
+        "text": "Destructive container deletion safety modal with persistent volume and mapped storage protection notice"
+      },
+      {
+        "tag": "NETWORK",
+        "text": "Automatic IPv4 IPAM preservation and zero-collision network lease disconnect/reconnect cycles"
+      },
+      {
+        "tag": "COMPOSE",
+        "text": "Docker Compose drift warning banner with mandatory acknowledgment checkbox"
+      },
+      {
+        "tag": "UI",
+        "text": "Expanded 70vw desktop modal interface with real-time SSE execution logs and status indicators"
+      }
+    ]
+  },
+  {
+    "version": "v1.9.6",
+    "badge": "STABLE",
+    "borderColor": "border-slate-700",
     "title": "Standalone AppImage Packaging & Runtime Path Resolution",
     "changes": [
       {
@@ -474,3 +506,4 @@
     ]
   }
 ]
+
