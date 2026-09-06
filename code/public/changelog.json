@@ -1,8 +1,32 @@
 [
   {
-    "version": "v1.9.8.10",
+    "version": "v1.9.8.12",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
+    "title": "Image Prune Engine & Action Controls",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Added container action bar with Create Container and Prune Images"
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Introduced Image Prune modal with space calculation and multi-select"
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Protected images referenced by running or stopped containers"
+      },
+      {
+        "tag": "UX",
+        "text": "Automated changelog badge tiering and top-right toast alerts"
+      }
+    ]
+  },
+  {
+    "version": "v1.9.8.10",
+    "badge": "STABLE",
+    "borderColor": "border-slate-700",
     "title": "Security Hardening & CodeQL Sanitization",
     "changes": [
       {
@@ -25,8 +49,7 @@
   },
   {
     "version": "v1.9.8",
-    "badge": "STABLE",
-    "borderColor": "border-slate-700",
+    "borderColor": "border-slate-800",
     "title": "Safe-Pull & Scan Pipeline, Network IPAM Preservation & Safety Controls",
     "changes": [
       {
@@ -57,8 +80,7 @@
   },
   {
     "version": "v1.9.6",
-    "badge": "STABLE",
-    "borderColor": "border-slate-700",
+    "borderColor": "border-slate-800",
     "title": "Standalone AppImage Packaging & Runtime Path Resolution",
     "changes": [
       {
@@ -81,7 +103,7 @@
   },
   {
     "version": "v1.9.4",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Cross-Platform Portability & Pure Vault Hardening",
     "changes": [
       {
@@ -104,7 +126,7 @@
   },
   {
     "version": "v1.9",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Encrypted In-Vault SSH Keys, Drag & Drop Upload & CodeQL Hardening",
     "changes": [
       {
@@ -131,7 +153,7 @@
   },
   {
     "version": "v1.8.6",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Syslog Streamer Modernization, PIN Modal Fix & 5-Domain Deep Audit",
     "changes": [
       {
@@ -154,7 +176,7 @@
   },
   {
     "version": "v1.8.5",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Critical Security Hardening & Remote Command Confinement",
     "changes": [
       {
@@ -177,7 +199,7 @@
   },
   {
     "version": "v1.8.0 – v1.8.4",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Self-Lockout Shield, Triage Context Guidance & Themed UI Enhancements",
     "changes": [
       {
@@ -200,7 +222,7 @@
   },
   {
     "version": "v1.7.9",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Log Grep Buffer Clarity & Themed Scrollbars",
     "changes": [
       {
@@ -223,7 +245,7 @@
   },
   {
     "version": "v1.7.8",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Sidebar Navigation Refinement & Security Action Isolation",
     "changes": [
       {
@@ -242,7 +264,7 @@
   },
   {
     "version": "v1.7.7",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Two-Column Tagged Changelog Grid & Streamlined Navigation",
     "changes": [
       {
@@ -265,7 +287,7 @@
   },
   {
     "version": "v1.7.6",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Deterministic Demo Mode & Real-Time Text Obfuscation Engine",
     "changes": [
       {
@@ -284,7 +306,7 @@
   },
   {
     "version": "v1.7.5",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Server-Side CPU Delta Calculation Engine & Tagged Changelogs",
     "changes": [
       {
@@ -307,7 +329,7 @@
   },
   {
     "version": "v1.7.4",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Static Public Changelog & Telemetry Refactoring",
     "changes": [
       {
@@ -322,7 +344,7 @@
   },
   {
     "version": "v1.7.3",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Decoupled JSON Changelog, Advanced RAM Telemetry & Deep Scan Hardening",
     "changes": [
       {
@@ -345,7 +367,7 @@
   },
   {
     "version": "v1.7.2",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Banned IPs Report Integration & Streamlined Architecture",
     "changes": [
       {
@@ -364,7 +386,7 @@
   },
   {
     "version": "v1.7.0 – v1.7.1",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Threats By Country Map & Universal Multi-Engine Firewall Adapter",
     "changes": [
       {
@@ -383,7 +405,7 @@
   },
   {
     "version": "v1.6.0 – v1.6.8",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Hybrid Threat Severity Scoring & Server-Side WHOIS Relay",
     "changes": [
       {
@@ -402,7 +424,7 @@
   },
   {
     "version": "v1.5.0",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Hub-and-Spoke Auditing, Web Header Policy Matrix & Multi-Server Pivots",
     "changes": [
       {
@@ -421,7 +443,7 @@
   },
   {
     "version": "v1.4.0",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Live Docker Telemetry, Container Controls & Vulnerability Scanner",
     "changes": [
       {
@@ -440,7 +462,7 @@
   },
   {
     "version": "v1.3.0",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Full Remote File Explorer, Chunked Stream Uploads & Downloads",
     "changes": [
       {
@@ -459,7 +481,7 @@
   },
   {
     "version": "v1.2.0",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Interactive Xterm.js Shell & Configurable Macro Automation",
     "changes": [
       {
@@ -478,7 +500,7 @@
   },
   {
     "version": "v1.1.0",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "AES-256-GCM Vault Encryption, Path Traversal Defense & Emergency Lock",
     "changes": [
       {
@@ -497,7 +519,7 @@
   },
   {
     "version": "v1.0.0",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Initial Production Release: Multi-Server Linux Dashboard",
     "changes": [
       {
@@ -516,7 +538,7 @@
   },
   {
     "version": "v0.3.0 – v0.9.0",
-    "borderColor": "border-slate-600",
+    "borderColor": "border-slate-800",
     "title": "Host Telemetry & Systemd Log Streaming Prototype",
     "changes": [
       {
