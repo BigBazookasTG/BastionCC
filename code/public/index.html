@@ -497,7 +497,7 @@
             <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
             <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
                 <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
-                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8.10 Changelog</span></div>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8.12 Changelog</span></div>
             </div>
         </div>
     </nav>
@@ -524,6 +524,27 @@
                     <span class="flex items-center space-x-1.5"><span class="text-emerald-500">●</span> <span>CPU: <span id="stat-cpu" class="text-slate-700 dark:text-slate-300 font-bold">--</span></span></span>
                     <span class="flex items-center space-x-1.5"><span class="text-blue-500">●</span> <span>RAM: <span id="stat-ram" class="text-slate-700 dark:text-slate-300 font-bold">--</span></span></span>
                 </div>
+                    <!-- Container Action Controls -->
+                    <div id="container-actions-bar" class="items-center gap-2 pt-0.5 hidden">
+                        <button id="btn-create-container" type="button" class="group inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-lg shadow-sm border border-emerald-500/30 transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
+                            <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                                <polyline points="3.29 7 12 12 20.71 7" />
+                                <line x1="12" y1="22" x2="12" y2="12" />
+                            </svg>
+                            <span>Create Container</span>
+                        </button>
+                        <button id="btn-prune-images" onclick="PruneManager.open()" type="button" class="group inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/90 hover:bg-slate-700/80 active:bg-slate-800 border border-slate-700/80 hover:border-slate-600 rounded-lg shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-amber-500/30">
+                            <svg class="w-3.5 h-3.5 shrink-0 text-slate-400 group-hover:text-amber-400 transition-colors duration-150" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 6h18" />
+                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                                <line x1="10" x2="10" y1="11" y2="17" />
+                                <line x1="14" x2="14" y1="11" y2="17" />
+                            </svg>
+                            <span>Prune Images</span>
+                        </button>
+                    </div>
             </div>
         </header>
 
@@ -684,7 +705,7 @@
 
                 <div class="bg-[#1e1e1e] rounded-lg p-4 border border-slate-700 flex-1 overflow-y-auto shadow-inner min-h-[200px]">
                     <div id="securityTerm" class="font-mono text-sm text-sky-400 whitespace-pre">
-                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9.8.10</p>
+                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9.8.12</p>
                         <p class="text-slate-500">Ready for target acquisition...</p>
                         <p class="text-accent mt-2">> _</p>
                     </div>
@@ -1687,13 +1708,14 @@
         function execDocker(c) { switchTab('terminal'); socket.emit('terminal-input', `docker exec -it ${c} /bin/bash || docker exec -it ${c} /bin/sh\r`); term.focus(); }
 
         function switchTab(tab) {
+            const _cab = document.getElementById('container-actions-bar'); if (_cab) { _cab.classList.add('hidden'); _cab.classList.remove('flex'); }
             document.getElementById('view-add-server').classList.add('hidden');
             document.getElementById('macro-buttons').classList.add('hidden');
             ['terminal', 'files', 'docker', 'logs', 'security'].forEach(t => { document.getElementById('view-'+t).classList.add('hidden'); document.getElementById('view-'+t).classList.remove('flex'); document.getElementById('tab-'+t).className = "text-sm font-semibold text-slate-500 pb-1 transition-colors" + (document.getElementById('tab-'+t).classList.contains('hidden') ? ' hidden' : ''); });
             const actCls = "text-sm font-semibold text-accent border-b-2 border-accent pb-1 transition-colors";
             if(tab === 'terminal') { document.getElementById('view-terminal').classList.remove('hidden'); document.getElementById('tab-terminal').className = actCls; document.getElementById('macro-buttons').classList.remove('hidden'); if(term) setTimeout(() => { try { fitAddon.fit(); } catch(e){} }, 50); } 
             else if (tab === 'files') { document.getElementById('view-files').classList.remove('hidden'); document.getElementById('view-files').classList.add('flex'); document.getElementById('tab-files').className = actCls; socket.emit('sftp-list', currentSftpPath); } 
-            else if (tab === 'docker') { document.getElementById('view-docker').classList.remove('hidden'); document.getElementById('view-docker').classList.add('flex'); document.getElementById('tab-docker').className = actCls; } 
+            else if (tab === 'docker') { document.getElementById('view-docker').classList.remove('hidden'); document.getElementById('view-docker').classList.add('flex'); document.getElementById('tab-docker').className = actCls; if (_cab) { _cab.classList.remove('hidden'); _cab.classList.add('flex'); } } 
             else if (tab === 'logs') { document.getElementById('view-logs').classList.remove('hidden'); document.getElementById('view-logs').classList.add('flex'); document.getElementById('tab-logs').className = actCls; if(logTerm) setTimeout(() => { try { logFitAddon.fit(); } catch(e){} }, 50); } 
             else if (tab === 'security') { document.getElementById('view-security').classList.remove('hidden'); document.getElementById('view-security').classList.add('flex'); document.getElementById('tab-security').className = actCls; }
         }
@@ -2172,6 +2194,152 @@ function _spResetStepper() {
   document.getElementById('sp-crash-drawer').style.display = 'none';
   document.getElementById('sp-stepper-footer').style.display = 'none';
 }
+
+// ============================================================================
+// DOCKER IMAGE PRUNE ENGINE
+// ============================================================================
+window.PruneManager = {
+  images: [],
+  isPruning: false,
+
+  open() {
+    const modal = document.getElementById('modal-prune-images');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    this.scan();
+  },
+
+  close() {
+    const modal = document.getElementById('modal-prune-images');
+    if (modal) modal.classList.add('hidden');
+  },
+
+  toggleSelectAll(checked) {
+    document.querySelectorAll('.prune-item-chk').forEach(cb => { cb.checked = checked; });
+    this.updateSelection();
+  },
+
+  updateSelection() {
+    const checkedBoxes = Array.from(document.querySelectorAll('.prune-item-chk:checked'));
+    const totalBoxes = document.querySelectorAll('.prune-item-chk');
+    const masterCb = document.getElementById('chk-prune-select-all');
+    const btnText = document.getElementById('prune-btn-text');
+
+    if (masterCb && totalBoxes.length > 0) {
+      masterCb.checked = (checkedBoxes.length === totalBoxes.length);
+    }
+
+    if (btnText) {
+      if (checkedBoxes.length > 0) {
+        btnText.textContent = 'Prune Selected (' + checkedBoxes.length + ')';
+      } else {
+        btnText.textContent = 'Prune All';
+      }
+    }
+  },
+
+  async scan() {
+    const tbody = document.getElementById('prune-images-tbody');
+    const countBadge = document.getElementById('prune-status-count');
+    const masterCb = document.getElementById('chk-prune-select-all');
+    if (masterCb) masterCb.checked = false;
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-slate-400 animate-pulse font-sans">Scanning Docker images over SSH...</td></tr>';
+    if (countBadge) countBadge.textContent = 'Scanning host...';
+    this.updateSelection();
+
+    try {
+      const res = await fetch('/api/docker/images/unused');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to scan images');
+
+      this.images = data.images || [];
+      this.render();
+    } catch (err) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="py-6 text-center text-rose-400 font-sans">Error: ' + escapeHtml(err.message) + '</td></tr>';
+      if (countBadge) countBadge.textContent = 'Scan failed';
+    }
+  },
+
+  render() {
+    const tbody = document.getElementById('prune-images-tbody');
+    const countBadge = document.getElementById('prune-status-count');
+    if (!tbody) return;
+
+    if (this.images.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-emerald-400 font-sans">No unused images found on host. Disk clean!</td></tr>';
+      if (countBadge) countBadge.textContent = '0 Unused Images';
+      this.updateSelection();
+      return;
+    }
+
+    if (countBadge) countBadge.textContent = this.images.length + (this.images.length === 1 ? ' Unused Image' : ' Unused Images');
+
+    tbody.innerHTML = this.images.map(img => `
+      <tr class="hover:bg-slate-800/40 text-slate-300">
+        <td class="py-2.5 px-3 text-center">
+          <input type="checkbox" class="prune-item-chk rounded bg-slate-800 border-slate-600 text-amber-500 focus:ring-amber-500/40" value="${escapeHtml(img.targetRef)}" onchange="PruneManager.updateSelection()" />
+        </td>
+        <td class="py-2.5 px-3 font-semibold text-slate-200 truncate max-w-xs">${escapeHtml(maskDemoText(img.repository))}:${escapeHtml(img.tag)}</td>
+        <td class="py-2.5 px-3 text-slate-400">${escapeHtml(img.id)}</td>
+        <td class="py-2.5 px-3 font-bold text-amber-400">${escapeHtml(img.size)}</td>
+        <td class="py-2.5 px-3">
+          ${img.dangling 
+            ? '<span class="px-2 py-0.5 text-[10px] rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">Dangling</span>' 
+            : '<span class="px-2 py-0.5 text-[10px] rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Unreferenced</span>'}
+        </td>
+      </tr>
+    `).join('');
+
+    this.updateSelection();
+  },
+
+  async execute() {
+    if (this.isPruning) return;
+    const btn = document.getElementById('btn-execute-prune');
+    const btnText = document.getElementById('prune-btn-text');
+    const chkAll = document.getElementById('chk-prune-all-unused');
+    const selectedBoxes = Array.from(document.querySelectorAll('.prune-item-chk:checked'));
+
+    const isSelective = selectedBoxes.length > 0;
+    const pruneAll = chkAll ? chkAll.checked : false;
+    const payload = isSelective
+      ? { imageIds: selectedBoxes.map(b => b.value) }
+      : { all: pruneAll };
+
+    this.isPruning = true;
+    if (btn) btn.disabled = true;
+    const origText = btnText ? btnText.textContent : 'Prune All';
+    if (btnText) btnText.textContent = 'Pruning...';
+
+    try {
+      const res = await fetch('/api/docker/images/prune', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Prune failed');
+
+      if (typeof showToast === 'function') {
+        showToast(isSelective ? 'Selected images removed successfully.' : 'Docker prune completed.');
+      } else {
+        alert('Prune Result:\n' + (data.output || 'Completed successfully.'));
+      }
+      await this.scan();
+    } catch (err) {
+      if (typeof showToast === 'function') {
+        showToast('Prune Error: ' + err.message, 'error');
+      } else {
+        alert('Prune Error: ' + err.message);
+      }
+    } finally {
+      this.isPruning = false;
+      if (btn) btn.disabled = false;
+      if (btnText) btnText.textContent = origText;
+      this.updateSelection();
+    }
+  }
+};
 /* BASTIONCC_V198_SCRIPT_END */
 </script>
 <!-- BASTIONCC_V198_MODALS_START -->
@@ -2370,6 +2538,75 @@ function _spResetStepper() {
     <div class="sp-modal-footer" style="padding: 14px 20px; border-top: 1px solid #242c38; margin: 0; background: #0d1117;">
       <button type="button" class="sp-btn-sec" onclick="closeDeleteModal()">Cancel</button>
       <button type="button" id="sp-btn-confirm-delete" class="sp-btn-danger-solid" onclick="executeContainerDelete()">Delete Container</button>
+    </div>
+  </div>
+</div>
+<!-- Prune Images Modal -->
+<div id="modal-prune-images" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden" role="dialog" aria-modal="true">
+  <div class="relative w-full max-w-3xl mx-4 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] transition-all">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90">
+      <div class="flex items-center gap-3">
+        <div class="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+            <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+            <line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" />
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-base font-semibold text-white tracking-wide">Prune Docker Images</h3>
+          <p class="text-xs text-slate-400">Scan, selectively delete, or batch prune unused images to reclaim disk space.</p>
+        </div>
+      </div>
+      <button type="button" onclick="PruneManager.close()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+      </button>
+    </div>
+
+    <div class="p-6 overflow-y-auto space-y-4 flex-1">
+      <div class="flex items-center justify-between bg-slate-800/40 p-3 rounded-xl border border-slate-700/50">
+        <div class="flex items-center gap-3">
+          <span id="prune-status-count" class="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-700 text-slate-300">Scanning host...</span>
+          <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+            <input type="checkbox" id="chk-prune-all-unused" class="rounded bg-slate-800 border-slate-600 text-amber-500 focus:ring-amber-500/40" />
+            <span>Include all unreferenced images (not just dangling)</span>
+          </label>
+        </div>
+        <button type="button" onclick="PruneManager.scan()" class="text-xs text-accent hover:underline inline-flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Rescan
+        </button>
+      </div>
+
+      <div class="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/40">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 bg-slate-800/30 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <th class="py-2.5 px-3 w-10 text-center">
+                <input type="checkbox" id="chk-prune-select-all" class="rounded bg-slate-800 border-slate-600 text-amber-500 focus:ring-amber-500/40" onchange="PruneManager.toggleSelectAll(this.checked)" />
+              </th>
+              <th class="py-2.5 px-3">Repository : Tag</th>
+              <th class="py-2.5 px-3">Image ID</th>
+              <th class="py-2.5 px-3">Size</th>
+              <th class="py-2.5 px-3">Status</th>
+            </tr>
+          </thead>
+          <tbody id="prune-images-tbody" class="text-xs divide-y divide-slate-800/60 font-mono">
+            <tr>
+              <td colspan="5" class="py-8 text-center text-slate-500 font-sans">Scanning Docker images over SSH...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-900/90">
+      <button type="button" onclick="PruneManager.close()" class="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors">
+        Cancel
+      </button>
+      <button id="btn-execute-prune" type="button" onclick="PruneManager.execute()" class="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 active:bg-amber-700 rounded-lg shadow-sm border border-amber-500/30 transition-all focus:outline-none focus:ring-2 focus:ring-amber-500/40">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /></svg>
+        <span id="prune-btn-text">Prune All</span>
+      </button>
     </div>
   </div>
 </div>
