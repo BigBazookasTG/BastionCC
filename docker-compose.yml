@@ -7,7 +7,6 @@ services:
       # Bound strictly to 127.0.0.1 so it is not exposed on your local Wi-Fi network
       - "127.0.0.1:${PORT:-3000}:3000"
     environment:
-      #- SAFETY_OFFICER_PIN=${SAFETY_OFFICER_PIN}
       # Automatically generates a random JWT secret on each container start if not provided
       - JWT_SECRET=${JWT_SECRET:-}      
       - RATE_LIMIT_ENABLED=false # Set to False if using on a localhost docker setup i.e your laptop / desktop, if you plan to host behind proxy on cloud infra set to true
@@ -16,5 +15,3 @@ services:
     volumes:
       # Persists your server list and macros
       - ./data:/app/data
-      # Mounts your local SSH keys read-only for seamless authentication
-      #- /path/to/ssh/folder/.ssh:/root/.ssh:ro #REMOVED from V1.9.2, in prepartion of appimage build, keyfiles can now be added via drag and drop.
