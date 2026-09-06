@@ -996,6 +996,7 @@ io.on('connection', (socket) => {
         htmlReport += `
     
 
+
 </body></html>`;
         socket.emit('security-data', `\x1b[32m✔ Deep Scan Complete! Preparing HTML Report...\x1b[0m\r\n`);
         socket.emit('deep-scan-complete', htmlReport);
@@ -1380,6 +1381,113 @@ function _buildCreateCmd(cfg, newImage) {
 }
 
 // API Routes with Strict Input Sanitization
+
+// ============================================================================
+// DOCKER IMAGE PRUNING & UNUSED MANAGEMENT ENDPOINTS
+// ============================================================================
+app.get('/api/docker/images/unused', async (req, res) => {
+  try {
+    const ssh = _resolveSsh();
+    if (!ssh) return res.status(400).json({ error: 'No active SSH session detected.' });
+
+    // 1. Fetch images using explicit custom delimiter to prevent column splitting bugs
+    const rawImages = await _runSshCmd(ssh, 'docker images --no-trunc --format "{{.ID}}---BCC---{{.Repository}}---BCC---{{.Tag}}---BCC---{{.Size}}---BCC---{{.CreatedAt}}"').catch(() => '');
+
+    // 2. Fetch every image SHA referenced by running and stopped containers
+    const inspectRaw = await _runSshCmd(ssh, 'docker inspect --format "{{.Image}}" $(docker ps -aq) 2>/dev/null || true').catch(() => '');
+    const psRaw = await _runSshCmd(ssh, 'docker ps -a --format "{{.Image}}" 2>/dev/null || true').catch(() => '');
+
+    const usedSet = new Set();
+    const NL = String.fromCharCode(10);
+
+    inspectRaw.split(NL).forEach(line => {
+      const val = line.trim();
+      if (!val) return;
+      usedSet.add(val);
+      const clean = val.replace(/^sha256:/, '');
+      usedSet.add(clean);
+      usedSet.add(clean.substring(0, 12));
+    });
+
+    psRaw.split(NL).forEach(line => {
+      const val = line.trim();
+      if (!val) return;
+      usedSet.add(val);
+      const clean = val.replace(/^sha256:/, '');
+      usedSet.add(clean);
+      usedSet.add(clean.substring(0, 12));
+    });
+
+    const unused = [];
+    rawImages.split(NL).forEach(line => {
+      const cleanLine = line.trim();
+      if (!cleanLine) return;
+
+      const parts = cleanLine.split('---BCC---');
+      const rawId = (parts[0] || '').trim();
+      const repo = (parts[1] || '').trim();
+      const tag = (parts[2] || '').trim();
+      const size = (parts[3] || '').trim();
+      const created = (parts[4] || '').trim();
+
+      const fullHex = rawId.replace(/^sha256:/, '');
+      const shortId = fullHex.substring(0, 12);
+      const isDangling = repo === '<none>' || tag === '<none>';
+      const tagRef = (!isDangling && repo && tag) ? (repo + ':' + tag) : '';
+
+      // Check if this image ID or tag is actively bound to any container
+      const inUse = usedSet.has(rawId) ||
+                    usedSet.has(fullHex) ||
+                    usedSet.has(shortId) ||
+                    (tagRef && usedSet.has(tagRef));
+
+      if (!inUse) {
+        unused.push({
+          id: shortId,
+          fullId: fullHex,
+          repository: repo || '<none>',
+          tag: tag || '<none>',
+          targetRef: tagRef || shortId,
+          size: size || '0B',
+          created: created || '',
+          dangling: isDangling
+        });
+      }
+    });
+
+    res.json({ images: unused, total: unused.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/docker/images/prune', async (req, res) => {
+  try {
+    const ssh = _resolveSsh();
+    if (!ssh) return res.status(400).json({ error: 'No active SSH session detected.' });
+
+    const selected = Array.isArray(req.body && req.body.imageIds) ? req.body.imageIds : [];
+
+    // Selective removal of chosen image IDs/tags
+    if (selected.length > 0) {
+      const safeTargets = selected.filter(id => _isValidContainerId(id) || _isValidImageTag(id));
+      if (safeTargets.length === 0) return res.status(400).json({ error: 'No valid image identifiers provided.' });
+      const cmd = `docker rmi ${safeTargets.map(_shQuote).join(' ')}`;
+      const output = await _runSshCmd(ssh, cmd);
+      return res.json({ success: true, output });
+    }
+
+    // Full prune fallback
+    const pruneAll = req.body && req.body.all === true;
+    const pruneCmd = pruneAll ? 'docker image prune -a -f' : 'docker image prune -f';
+    const output = await _runSshCmd(ssh, pruneCmd);
+
+    res.json({ success: true, output });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/docker/containers/:id/edit-config', async (req, res) => {
   try {
     const containerId = String(req.params.id).replace(/^\//, '').trim();
@@ -1592,4 +1700,4 @@ app.post('/api/docker/recreate/:depId/decision', (req, res) => {
 });
 /* BASTIONCC_V198_BACKEND_END */
 
-server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8.10 Ready on port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8.12 Ready on port ${PORT}`));
