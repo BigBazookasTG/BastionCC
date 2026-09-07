@@ -851,7 +851,12 @@ io.on('connection', (socket) => {
         const targetHost = targetSrv ? targetSrv.host : '127.0.0.1';
 
         let htmlReport = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>BastionCC Security Deep Audit</title>
-        <style>body { background: #0f172a; color: #f8fafc; font-family: monospace; padding: 30px; line-height: 1.5; } .header-container { text-align: center; border-bottom: 2px solid #334155; padding-bottom: 20px; margin-bottom: 30px; } .logo { max-width: 220px; height: auto; margin-bottom: 15px; } h1 { color: #f97316; margin: 0 0 5px 0; } .server-subtitle { color: #94a3b8; font-size: 15px; margin-bottom: 10px; } .timestamp { color: #64748b; font-size: 12px; } .attribution { color: #64748b; font-size: 11px; margin-top: 6px; font-style: italic; } h2 { color: #38bdf8; margin-top: 30px; border-bottom: 1px solid #334155; padding-bottom: 5px;} h3 { color: #f8fafc; } .section { background: #1e293b; padding: 20px; border-radius: 8px; border: 1px solid #334155; margin-bottom: 20px; overflow-x: auto; } pre { white-space: pre-wrap; word-wrap: break-word; font-size: 13px; } .success { color: #22c55e; } .warning { color: #eab308; } .danger { color: #ef4444; } table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; } th, td { text-align: left; padding: 8px; border-bottom: 1px solid #334155; } th { color: #f97316; }</style></head><body>
+        <style>body { background: #0f172a; color: #f8fafc; font-family: monospace; padding: 30px; line-height: 1.5; } .header-container { text-align: center; border-bottom: 2px solid #334155; padding-bottom: 20px; margin-bottom: 30px; } .logo { max-width: 220px; height: auto; margin-bottom: 15px; } h1 { color: #f97316; margin: 0 0 5px 0; } .server-subtitle { color: #94a3b8; font-size: 15px; margin-bottom: 10px; } .timestamp { color: #64748b; font-size: 12px; } .attribution { color: #64748b; font-size: 11px; margin-top: 6px; font-style: italic; } h2 { color: #38bdf8; margin-top: 30px; border-bottom: 1px solid #334155; padding-bottom: 5px;} h3 { color: #f8fafc; } .section { background: #1e293b; padding: 20px; border-radius: 8px; border: 1px solid #334155; margin-bottom: 20px; overflow-x: auto; } pre { white-space: pre-wrap; word-wrap: break-word; font-size: 13px; } .success { color: #22c55e; } .warning { color: #eab308; } .danger { color: #ef4444; } table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; } th, td { text-align: left; padding: 8px; border-bottom: 1px solid #334155; } th { color: #f97316; }</style>            
+
+    
+
+    
+</head><body>
         <div class="header-container">${logoBase64 ? `<img src="${logoBase64}" class="logo" alt="BastionCC Logo">` : ''}<h1>BastionCC Deep Audit Report</h1><div class="server-subtitle">Target Server: ${escapeHtmlForReport(targetServerName)} (${escapeHtmlForReport(targetHost)})</div><div class="timestamp">Generated: ${new Date().toLocaleString()}</div></div>`;
 
         const execPromise = (command) => new Promise(res => exec(command, (err, out, serr) => res(out || serr || (err ? err.message : ''))));
@@ -1385,6 +1390,348 @@ function _buildCreateCmd(cfg, newImage) {
 // ============================================================================
 // DOCKER IMAGE PRUNING & UNUSED MANAGEMENT ENDPOINTS
 // ============================================================================
+
+// ============================================================================
+// DOCKER COMPOSE & STACK MANAGEMENT ENDPOINTS
+// ============================================================================
+// ============================================================================
+// DOCKER COMPOSE & STACK MANAGEMENT ENDPOINTS
+// ============================================================================
+async function _bccDockerExec(ssh, cmd) {
+  if (ssh && typeof _runSshCmd === 'function') {
+    return await _runSshCmd(ssh, cmd).catch(() => '');
+  }
+  const { exec } = require('child_process');
+  return new Promise((resolve) => {
+    exec(cmd, { maxBuffer: 1024 * 1024 * 5 }, (err, stdout) => resolve(stdout || ''));
+  });
+}
+
+app.get('/api/docker/compose/discover', async (req, res) => {
+  try {
+    const ssh = typeof _resolveSsh === 'function' ? _resolveSsh() : null;
+    const NL = String.fromCharCode(10);
+    const stackMap = new Map();
+    const envPrefix = 'export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin:~/.docker/cli-plugins; ';
+
+    // 1. Docker Compose v2 Native LS
+    const composeLsRaw = await _bccDockerExec(ssh, envPrefix + 'docker compose ls --all --format "{{.Name}}---BCC---{{.ConfigFiles}}---BCC---{{.Status}}" 2>/dev/null || true');
+    composeLsRaw.split(NL).forEach(line => {
+      const parts = line.trim().split('---BCC---');
+      const project = (parts[0] || '').trim();
+      const configFiles = (parts[1] || '').trim();
+      const status = (parts[2] || '').trim();
+      if (!project) return;
+
+      const workingDir = configFiles.includes('/') ? configFiles.substring(0, configFiles.lastIndexOf('/')) : '';
+      const configFile = configFiles.includes('/') ? configFiles.substring(configFiles.lastIndexOf('/') + 1) : (configFiles || 'docker-compose.yml');
+
+      stackMap.set(project, {
+        name: project,
+        workingDir: workingDir || `~/stacks/${project}`,
+        configFile: configFile || 'docker-compose.yml',
+        running: status.toLowerCase().includes('running') || status.toLowerCase().includes('up'),
+        source: 'compose-ls'
+      });
+    });
+
+    // 2. Comprehensive Container Label Scan (Dockhand, Portainer, CLI Compose)
+    const labelCmd = envPrefix + 'docker ps -a --format \'{{.Names}}---BCC---{{.Status}}---BCC---{{.Labels}}\' 2>/dev/null || true';
+    const labelRaw = await _bccDockerExec(ssh, labelCmd);
+    labelRaw.split(NL).forEach(line => {
+      const parts = line.trim().split('---BCC---');
+      const cName = (parts[0] || '').trim();
+      const status = (parts[1] || '').trim();
+      const labels = (parts[2] || '').trim();
+      if (!labels) return;
+
+      let project = '';
+      let workingDir = '';
+      let configFile = 'docker-compose.yml';
+
+      labels.split(',').forEach(lbl => {
+        const [k, ...vParts] = lbl.split('=');
+        const v = vParts.join('=');
+        if (k === 'com.docker.compose.project' || k === 'io.dockhand.stack.name') project = v;
+        if (k === 'com.docker.compose.project.working_dir' || k === 'io.dockhand.stack.dir') workingDir = v;
+        if (k === 'com.docker.compose.project.config_files') configFile = v;
+      });
+
+      if (project && !stackMap.has(project)) {
+        stackMap.set(project, {
+          name: project,
+          workingDir: workingDir || `~/stacks/${project}`,
+          configFile: configFile || 'docker-compose.yml',
+          running: status.toLowerCase().includes('up'),
+          source: 'container-label'
+        });
+      }
+    });
+
+    // 3. Deep Filesystem Crawl (/opt, /srv, /data, $HOME, /var/lib/dockhand)
+    const findCmd = envPrefix + 'find /opt /srv /data "$HOME" /var/lib/dockhand -maxdepth 5 -type f \\( -name "docker-compose.yml" -o -name "compose.yaml" -o -name "compose.yml" \\) 2>/dev/null | head -n 45 || true';
+    const findRaw = await _bccDockerExec(ssh, findCmd);
+    findRaw.split(NL).forEach(filePath => {
+      const fPath = filePath.trim();
+      if (!fPath) return;
+      const dir = fPath.substring(0, fPath.lastIndexOf('/'));
+      const filename = fPath.substring(fPath.lastIndexOf('/') + 1);
+      const inferredName = dir.substring(dir.lastIndexOf('/') + 1) || 'stack';
+
+      if (!stackMap.has(inferredName)) {
+        stackMap.set(inferredName, {
+          name: inferredName,
+          workingDir: dir,
+          configFile: filename,
+          running: false,
+          source: 'filesystem'
+        });
+      }
+    });
+
+    res.json({ stacks: Array.from(stackMap.values()) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/docker/compose/helpers', async (req, res) => {
+  try {
+    const ssh = typeof _resolveSsh === 'function' ? _resolveSsh() : null;
+    const envPrefix = 'export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin; ';
+    const rawNets = await _bccDockerExec(ssh, envPrefix + 'docker network ls --format "{{.Name}}---BCC---{{.Driver}}" 2>/dev/null || true');
+    const rawVols = await _bccDockerExec(ssh, envPrefix + 'docker volume ls --format "{{.Name}}" 2>/dev/null || true');
+
+    const NL = String.fromCharCode(10);
+    const networks = [];
+    rawNets.split(NL).forEach(line => {
+      const parts = line.trim().split('---BCC---');
+      const name = (parts[0] || '').trim();
+      const driver = (parts[1] || 'bridge').trim();
+      if (name && !['bridge', 'host', 'none'].includes(name)) {
+        networks.push({ name, driver });
+      }
+    });
+
+    const volumes = [];
+    rawVols.split(NL).forEach(name => {
+      const clean = name.trim();
+      if (clean) volumes.push(clean);
+    });
+
+    res.json({ networks, volumes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+app.get('/api/docker/compose/stack-content', async (req, res) => {
+  try {
+    const ssh = typeof _resolveSsh === 'function' ? _resolveSsh() : null;
+    const dir = String(req.query.dir || '').trim();
+    const file = String(req.query.file || 'docker-compose.yml').trim();
+
+    if (!dir && !file) {
+      return res.status(400).json({ error: 'Missing dir or file parameter.' });
+    }
+
+    const readScript = `
+      WORKDIR=${_shQuote(dir)}
+      CFGFILE=${_shQuote(file)}
+      TARGET=""
+      if [ -n "$WORKDIR" ] && [ -f "$WORKDIR/$CFGFILE" ]; then
+        TARGET="$WORKDIR/$CFGFILE"
+      elif [ -n "$CFGFILE" ] && [ -f "$CFGFILE" ]; then
+        TARGET="$CFGFILE"
+      elif [ -n "$WORKDIR" ] && [ -f "$WORKDIR/docker-compose.yml" ]; then
+        TARGET="$WORKDIR/docker-compose.yml"
+      elif [ -n "$WORKDIR" ] && [ -f "$WORKDIR/compose.yaml" ]; then
+        TARGET="$WORKDIR/compose.yaml"
+      elif [ -n "$WORKDIR" ] && [ -f "$WORKDIR/docker-compose.yaml" ]; then
+        TARGET="$WORKDIR/docker-compose.yaml"
+      fi
+
+      if [ -n "$TARGET" ] && [ -f "$TARGET" ]; then
+        (base64 -w0 "$TARGET" 2>/dev/null || base64 "$TARGET")
+      fi
+      echo "___BCC_ENV_SEP___"
+      if [ -n "$WORKDIR" ] && [ -f "$WORKDIR/.env" ]; then
+        (base64 -w0 "$WORKDIR/.env" 2>/dev/null || base64 "$WORKDIR/.env")
+      fi
+    `;
+
+    const rawOut = await _bccDockerExec(ssh, readScript);
+    const parts = rawOut.split('___BCC_ENV_SEP___');
+    const b64Yaml = (parts[0] || '').trim();
+    const b64Env = (parts[1] || '').trim();
+
+    const yaml = b64Yaml ? Buffer.from(b64Yaml, 'base64').toString('utf8') : '';
+    const env = b64Env ? Buffer.from(b64Env, 'base64').toString('utf8') : '';
+
+    res.json({ success: true, yaml, env });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/docker/compose/destroy', async (req, res) => {
+  try {
+    const ssh = typeof _resolveSsh === 'function' ? _resolveSsh() : null;
+    const projectName = String(req.body.projectName || '').trim();
+    const workingDir = String(req.body.workingDir || '').trim();
+    const deleteVolumes = Boolean(req.body.deleteVolumes);
+
+    if (!projectName || !/^[a-zA-Z0-9_\-]+$/.test(projectName)) {
+      return res.status(400).json({ error: 'Invalid project name' });
+    }
+
+    const downFlags = deleteVolumes ? 'down -v --remove-orphans' : 'down --remove-orphans';
+
+    const destroyScript = `
+      export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin:~/.docker/cli-plugins"
+      WORKDIR=${_shQuote(workingDir)}
+      PROJ=${_shQuote(projectName)}
+      
+      if [ -n "$WORKDIR" ] && [ -d "$WORKDIR" ]; then
+        cd "$WORKDIR"
+        if docker compose version >/dev/null 2>&1; then
+          docker compose -p "$PROJ" ${downFlags} 2>&1
+        elif docker-compose version >/dev/null 2>&1; then
+          docker-compose -p "$PROJ" ${downFlags} 2>&1
+        fi
+        cd ~
+        rm -rf "$WORKDIR"
+      else
+        if docker compose version >/dev/null 2>&1; then
+          docker compose -p "$PROJ" ${downFlags} 2>&1
+        elif docker-compose version >/dev/null 2>&1; then
+          docker-compose -p "$PROJ" ${downFlags} 2>&1
+        fi
+      fi
+    `;
+
+    const output = await _bccDockerExec(ssh, destroyScript);
+    res.json({ success: true, output });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/docker/compose/deploy', async (req, res) => {
+  try {
+    const ssh = typeof _resolveSsh === 'function' ? _resolveSsh() : null;
+    const projectName = String(req.body.projectName || '').trim();
+    let workingDir = String(req.body.workingDir || '').trim();
+    const yamlContent = String(req.body.composeYaml || '');
+    const envContent = String(req.body.envContent || '');
+
+    if (!projectName || !/^[a-zA-Z0-9_\-]+$/.test(projectName)) {
+      return res.status(400).json({ error: 'Invalid project name. Use alphanumeric characters, dashes, or underscores.' });
+    }
+
+    if (!workingDir) {
+      workingDir = `~/stacks/${projectName}`;
+    }
+    if (!/^[a-zA-Z0-9_\-\.\/~]+$/.test(workingDir)) {
+      return res.status(400).json({ error: 'Invalid working directory path.' });
+    }
+
+    const b64Yaml = Buffer.from(yamlContent, 'utf8').toString('base64');
+    const b64Env = Buffer.from(envContent, 'utf8').toString('base64');
+
+    const testToken = 'bcc_chk_' + Math.random().toString(36).substring(2, 10);
+    const tmpDir = `/tmp/${testToken}`;
+
+    // 1. Stage files in temporary directory on the host
+    const stageCmd = `mkdir -p ${tmpDir} && echo "${b64Yaml}" | base64 -d > ${tmpDir}/docker-compose.yml && echo "${b64Env}" | base64 -d > ${tmpDir}/.env`;
+    await _bccDockerExec(ssh, stageCmd);
+
+    // 2. Validate YAML schema with docker compose config
+    const validateCmd = `export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin:~/.docker/cli-plugins"
+cd ${tmpDir}
+if docker compose version >/dev/null 2>&1; then
+  docker compose -p ${_shQuote(projectName)} config 2>&1
+  echo "___STATUS___:$?"
+elif docker-compose version >/dev/null 2>&1; then
+  docker-compose -p ${_shQuote(projectName)} config 2>&1
+  echo "___STATUS___:$?"
+else
+  echo "Docker Compose CLI is not installed or not in PATH"
+  echo "___STATUS___:127"
+fi
+`;
+
+    const validateResult = await _bccDockerExec(ssh, validateCmd);
+
+    // 3. Remove temporary testing files
+    await _bccDockerExec(ssh, `rm -rf ${tmpDir}`);
+
+    // 4. Inspect result
+    const statusMatch = validateResult.match(/___STATUS___:(\d+)/);
+    const exitCode = statusMatch ? parseInt(statusMatch[1], 10) : 1;
+    const cleanOutput = validateResult.replace(/___STATUS___:\d+/, '').trim();
+
+    if (exitCode !== 0) {
+      return res.status(422).json({
+        success: false,
+        validationError: true,
+        output: cleanOutput || 'Docker rejected configuration (exit code ' + exitCode + ')'
+      });
+    }
+
+    // 5. Pre-flight passed: Deploy stack
+    const deployCmd = `export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin:~/.docker/cli-plugins"
+mkdir -p ${workingDir}
+echo "${b64Yaml}" | base64 -d > ${workingDir}/docker-compose.yml
+echo "${b64Env}" | base64 -d > ${workingDir}/.env
+cd ${workingDir}
+if docker compose version >/dev/null 2>&1; then
+  docker compose -p ${_shQuote(projectName)} up -d 2>&1
+else
+  docker-compose -p ${_shQuote(projectName)} up -d 2>&1
+fi
+`;
+
+    const deployOutput = await _bccDockerExec(ssh, deployCmd);
+    res.json({ success: true, output: deployOutput, workingDir });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/docker/containers/create-single', async (req, res) => {
+  try {
+    const ssh = typeof _resolveSsh === 'function' ? _resolveSsh() : null;
+    const cName = String(req.body.name || '').trim();
+    const cImg = String(req.body.image || '').trim();
+    if (!_isValidContainerId(cName)) return res.status(400).json({ error: 'Invalid container name format.' });
+    if (!_isValidImageTag(cImg)) return res.status(400).json({ error: 'Invalid image tag format.' });
+
+    const cfg = {
+      name: cName,
+      restartPolicy: req.body.restartPolicy || 'unless-stopped',
+      privileged: !!req.body.privileged,
+      capAdd: [],
+      labels: {},
+      env: Array.isArray(req.body.env) ? req.body.env : [],
+      ports: Array.isArray(req.body.ports) ? req.body.ports : [],
+      binds: Array.isArray(req.body.binds) ? req.body.binds : [],
+      primaryNetwork: { name: req.body.network || 'bridge', ipv4: null }
+    };
+
+    const createCmd = _buildCreateCmd(cfg, cImg);
+    await _bccDockerExec(ssh, createCmd);
+    await _bccDockerExec(ssh, `docker start ${_shQuote(cName)}`);
+
+    res.json({ success: true, message: `Container ${cName} created and started.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 app.get('/api/docker/images/unused', async (req, res) => {
   try {
     const ssh = _resolveSsh();
@@ -1700,4 +2047,4 @@ app.post('/api/docker/recreate/:depId/decision', (req, res) => {
 });
 /* BASTIONCC_V198_BACKEND_END */
 
-server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8.12 Ready on port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8.16 Ready on port ${PORT}`));
