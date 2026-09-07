@@ -1,8 +1,36 @@
 [
   {
-    "version": "v1.9.8.12",
+    "version": "v1.9.8.16",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
+    "title": "Full Docker Compose Management, Stack Teardown & Volume Safety",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Interactive Docker Compose editor with live YAML syntax linting, environment variable validation, and pre-flight schema checks prior to execution"
+      },
+      {
+        "tag": "FEATURE",
+        "text": "In-place stack editing that automatically reads and populates existing docker-compose.yml and .env files from the host"
+      },
+      {
+        "tag": "SAFETY",
+        "text": "Destructive stack deletion safety modal with dynamic persistent volume protection warning (down -v toggle defaulting to safe preservation)"
+      },
+      {
+        "tag": "UX",
+        "text": "Clean editor initialization defaulting to version 3.8 boilerplate on modal open and new stack selection"
+      },
+      {
+        "tag": "UX",
+        "text": "Compacted image prune table header to Size with an uncompressed disk footprint SVG info tooltip"
+      }
+    ]
+  },
+  {
+    "version": "v1.9.8.12",
+    "badge": "STABLE",
+    "borderColor": "border-slate-700",
     "title": "Image Prune Engine & Action Controls",
     "changes": [
       {
@@ -25,8 +53,7 @@
   },
   {
     "version": "v1.9.8.10",
-    "badge": "STABLE",
-    "borderColor": "border-slate-700",
+    "borderColor": "border-slate-800",
     "title": "Security Hardening & CodeQL Sanitization",
     "changes": [
       {
@@ -552,4 +579,3 @@
     ]
   }
 ]
-
