@@ -497,7 +497,7 @@
             <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
             <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
                 <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
-                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8.12 Changelog</span></div>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8.16 Changelog</span></div>
             </div>
         </div>
     </nav>
@@ -526,13 +526,13 @@
                 </div>
                     <!-- Container Action Controls -->
                     <div id="container-actions-bar" class="items-center gap-2 pt-0.5 hidden">
-                        <button id="btn-create-container" type="button" class="group inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-lg shadow-sm border border-emerald-500/30 transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
+                        <button id="btn-compose-deploy" type="button" onclick="ComposeManager.open()" class="group inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-lg shadow-sm border border-emerald-500/30 transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-emerald-500/40">
                             <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
                                 <polyline points="3.29 7 12 12 20.71 7" />
                                 <line x1="12" y1="22" x2="12" y2="12" />
                             </svg>
-                            <span>Create Container</span>
+                            <span>Compose / Deploy</span>
                         </button>
                         <button id="btn-prune-images" onclick="PruneManager.open()" type="button" class="group inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/90 hover:bg-slate-700/80 active:bg-slate-800 border border-slate-700/80 hover:border-slate-600 rounded-lg shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-amber-500/30">
                             <svg class="w-3.5 h-3.5 shrink-0 text-slate-400 group-hover:text-amber-400 transition-colors duration-150" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -705,7 +705,7 @@
 
                 <div class="bg-[#1e1e1e] rounded-lg p-4 border border-slate-700 flex-1 overflow-y-auto shadow-inner min-h-[200px]">
                     <div id="securityTerm" class="font-mono text-sm text-sky-400 whitespace-pre">
-                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9.8.12</p>
+                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9.8.16</p>
                         <p class="text-slate-500">Ready for target acquisition...</p>
                         <p class="text-accent mt-2">> _</p>
                     </div>
@@ -2340,6 +2340,798 @@ window.PruneManager = {
     }
   }
 };
+
+// ============================================================================
+// DOCKER COMPOSE & DUAL-MODE DEPLOYMENT ENGINE
+// ============================================================================
+window.ComposeManager = {
+  cmEditor: null,
+  activeMode: 'compose',
+  activeFileTab: 'yaml',
+  activeEnvMode: 'raw',
+  discoveredStacks: [],
+  discoveredHelpers: { networks: [], volumes: [] },
+  isWorkingDirCustom: false,
+  _lintDebounceTimer: null,
+
+  async ensureCodeMirrorLoaded() {
+    const loadScript = (src) => new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.crossOrigin = 'anonymous';
+      s.onload = () => resolve();
+      s.onerror = () => reject();
+      document.head.appendChild(s);
+    });
+
+    if (typeof CodeMirror === 'undefined') {
+      try {
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js');
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js');
+      } catch(e) {
+        try {
+          await loadScript('https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js');
+          await loadScript('https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/yaml/yaml.min.js');
+        } catch(err2) {
+          console.warn('[BastionCC] CodeMirror CDN unavailable.');
+        }
+      }
+    }
+
+    if (typeof jsyaml === 'undefined') {
+      try {
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js');
+      } catch(e) {
+        try {
+          await loadScript('https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js');
+        } catch(err2) {
+          console.warn('[BastionCC] js-yaml CDN unavailable.');
+        }
+      }
+    }
+
+    return typeof CodeMirror !== 'undefined';
+  },
+
+  async initEditor() {
+    const txt = document.getElementById('cm-compose-textarea');
+    if (!txt) return;
+
+    if (!txt.value.trim() || txt.value.includes('services:')) {
+      txt.value = "version: '3.8'\n";
+    }
+
+    const available = await this.ensureCodeMirrorLoaded();
+    if (!available || typeof CodeMirror === 'undefined') return;
+    if (this.cmEditor) return;
+
+    try {
+      this.cmEditor = CodeMirror.fromTextArea(txt, {
+        mode: 'yaml',
+        theme: 'dracula',
+        direction: 'ltr',
+        lineNumbers: true,
+        gutters: ["CodeMirror-linenumbers", "env-lint-gutter"],
+        tabSize: 2,
+        indentUnit: 2,
+        lineWrapping: true
+      });
+      this.cmEditor.setSize('100%', 560);
+      this.cmEditor.on('change', () => this.scheduleValidation());
+      this.validateAll();
+    } catch(e) {
+      console.warn('[BastionCC] CodeMirror attach error:', e);
+    }
+  },
+
+  scheduleValidation() {
+    clearTimeout(this._lintDebounceTimer);
+    this._lintDebounceTimer = setTimeout(() => this.validateAll(), 250);
+  },
+
+  validateAll() {
+    this.validateEnvVars();
+    this.validateYamlSyntax();
+  },
+
+  validateYamlSyntax() {
+    if (this.activeMode !== 'compose') {
+      this.setDeployButtonState(true);
+      return;
+    }
+
+    const yaml = this.getYaml().trim();
+
+    if (!yaml) {
+      this.setDeployButtonState(false, 'YAML content is empty');
+      return;
+    }
+
+    const lines = yaml.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('\t')) {
+        this.setDeployButtonState(false, `Line ${i + 1}: Tabs are not allowed in YAML. Please use spaces.`);
+        return;
+      }
+    }
+
+    if (typeof jsyaml !== 'undefined') {
+      try {
+        const parsed = jsyaml.load(yaml);
+        if (!parsed || typeof parsed !== 'object') {
+          this.setDeployButtonState(false, 'Compose specification must be a valid YAML dictionary mapping.');
+          return;
+        }
+        if (!parsed.services || typeof parsed.services !== 'object' || Object.keys(parsed.services).length === 0) {
+          this.setDeployButtonState(false, "Missing required 'services:' block (at least one service must be defined).");
+          return;
+        }
+      } catch (err) {
+        const line = err.mark ? `Line ${err.mark.line + 1}: ` : '';
+        const msg = err.reason || err.message || 'Syntax error';
+        this.setDeployButtonState(false, `${line}${msg}`);
+        return;
+      }
+    } else {
+      if (!/^services\s*:/m.test(yaml)) {
+        this.setDeployButtonState(false, "Missing required 'services:' block.");
+        return;
+      }
+    }
+
+    this.setDeployButtonState(true);
+  },
+
+  setDeployButtonState(isValid, errorMsg = '') {
+    const btn = document.getElementById('btn-execute-deploy');
+    const banner = document.getElementById('cd-validation-banner');
+    const bannerText = document.getElementById('cd-validation-banner-text');
+    if (!btn) return;
+
+    if (isValid) {
+      btn.disabled = false;
+      btn.classList.remove('opacity-40', 'cursor-not-allowed');
+      btn.classList.add('hover:bg-emerald-500', 'active:bg-emerald-700');
+      if (banner) banner.classList.add('hidden');
+    } else {
+      btn.disabled = true;
+      btn.classList.add('opacity-40', 'cursor-not-allowed');
+      btn.classList.remove('hover:bg-emerald-500', 'active:bg-emerald-700');
+      if (banner && bannerText) {
+        bannerText.textContent = errorMsg;
+        banner.classList.remove('hidden');
+      }
+    }
+  },
+
+  getDefinedEnvKeys() {
+    if (this.activeEnvMode === 'table') this.syncTableToRawEnv();
+    const raw = document.getElementById('cd-env-raw') ? document.getElementById('cd-env-raw').value : '';
+    const keys = new Set();
+    raw.split('\n').forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const idx = trimmed.indexOf('=');
+      const k = idx !== -1 ? trimmed.substring(0, idx).trim() : trimmed;
+      if (k) keys.add(k);
+    });
+    return keys;
+  },
+
+  validateEnvVars() {
+    if (!this.cmEditor) return;
+    this.cmEditor.clearGutter('env-lint-gutter');
+
+    const definedKeys = this.getDefinedEnvKeys();
+    const yaml = this.cmEditor.getValue();
+    const lines = yaml.split('\n');
+    const varRegex = /(?<!\$)\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g;
+
+    lines.forEach((lineText, lineIdx) => {
+      if (lineText.trim().startsWith('#')) return;
+      let match;
+      const missing = [];
+      varRegex.lastIndex = 0;
+
+      while ((match = varRegex.exec(lineText)) !== null) {
+        const varName = match[1];
+        if (varName && !['PWD', 'COMPOSE_PROJECT_NAME'].includes(varName) && !definedKeys.has(varName)) {
+          missing.push(varName);
+        }
+      }
+
+      if (missing.length > 0) {
+        const dot = document.createElement('div');
+        dot.className = 'env-missing-dot';
+        dot.setAttribute('title', `Missing variable in .env: ${missing.map(v => '$' + v).join(', ')}`);
+        this.cmEditor.setGutterMarker(lineIdx, 'env-lint-gutter', dot);
+      }
+    });
+  },
+
+  getYaml() {
+    if (this.cmEditor) return this.cmEditor.getValue();
+    const txt = document.getElementById('cm-compose-textarea');
+    return txt ? txt.value : '';
+  },
+
+  setYaml(val) {
+    if (this.cmEditor) {
+      this.cmEditor.setValue(val);
+      this.cmEditor.refresh();
+      this.validateAll();
+    }
+    const txt = document.getElementById('cm-compose-textarea');
+    if (txt) txt.value = val;
+  },
+
+  async open() {
+    const modal = document.getElementById('modal-compose-deploy');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+
+    await this.initEditor();
+
+    const sel = document.getElementById('cd-stack-select');
+    if (sel) {
+      sel.value = '__NEW__';
+      await this.onStackSelect('__NEW__');
+    }
+
+    const refreshCm = () => {
+      if (this.cmEditor) {
+        this.cmEditor.refresh();
+        this.cmEditor.setSize('100%', 560);
+        this.validateAll();
+      }
+    };
+    requestAnimationFrame(refreshCm);
+    setTimeout(refreshCm, 80);
+    setTimeout(refreshCm, 250);
+
+    document.addEventListener('click', this._closeHelpersOutside);
+
+    try { await this.loadDiscoveredStacks(); } catch(e) { console.error('Stack discovery:', e); }
+    try { await this.loadHelpers(); } catch(e) { console.error('Helpers:', e); }
+    this.populateSingleNetworks();
+
+    const envRawEl = document.getElementById('cd-env-raw');
+    if (envRawEl && !envRawEl._hasEnvLinter) {
+      envRawEl.addEventListener('input', () => this.validateAll());
+      envRawEl._hasEnvLinter = true;
+    }
+  },
+
+  close() {
+    const modal = document.getElementById('modal-compose-deploy');
+    if (modal) modal.classList.add('hidden');
+    document.getElementById('cd-console-drawer').classList.add('hidden');
+    document.removeEventListener('click', this._closeHelpersOutside);
+  },
+
+  _closeHelpersOutside(e) {
+    if (!e.target.closest('#footer-compose-helpers')) {
+      const nd = document.getElementById('net-helper-dropdown');
+      const vd = document.getElementById('vol-helper-dropdown');
+      if (nd) nd.classList.add('hidden');
+      if (vd) vd.classList.add('hidden');
+    }
+  },
+
+  setMode(mode) {
+    this.activeMode = mode;
+    const btnC = document.getElementById('btn-mode-compose');
+    const btnS = document.getElementById('btn-mode-single');
+    const vC = document.getElementById('view-compose-mode');
+    const vS = document.getElementById('view-single-mode');
+    const topRow = document.getElementById('cd-top-target-row');
+    const footerHelpers = document.getElementById('footer-compose-helpers');
+    const btnText = document.getElementById('btn-deploy-text');
+
+    if (mode === 'compose') {
+      btnC.className = 'px-3.5 py-1.5 rounded-lg bg-emerald-600 text-white shadow transition-colors';
+      btnS.className = 'px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-white transition-colors';
+      vC.classList.remove('hidden');
+      vS.classList.add('hidden');
+      if (topRow) topRow.classList.remove('hidden');
+      if (footerHelpers) footerHelpers.classList.remove('hidden');
+      btnText.textContent = 'Deploy Stack';
+      this.validateAll();
+      setTimeout(() => {
+        if (this.cmEditor) {
+          this.cmEditor.refresh();
+          this.cmEditor.setSize('100%', 560);
+          this.validateAll();
+        }
+      }, 60);
+    } else {
+      btnS.className = 'px-3.5 py-1.5 rounded-lg bg-emerald-600 text-white shadow transition-colors';
+      btnC.className = 'px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-white transition-colors';
+      vS.classList.remove('hidden');
+      vC.classList.add('hidden');
+      if (topRow) topRow.classList.add('hidden');
+      if (footerHelpers) footerHelpers.classList.add('hidden');
+      btnText.textContent = 'Deploy Container';
+      this.setDeployButtonState(true);
+    }
+  },
+
+  onProjectNameInput(val) {
+    if (this.isWorkingDirCustom) return;
+    const dirInput = document.getElementById('cd-working-dir');
+    if (dirInput) {
+      dirInput.value = val ? `~/stacks/${val.trim()}` : '';
+    }
+  },
+
+  onWorkingDirManualEdit() {
+    this.isWorkingDirCustom = true;
+  },
+
+  setFileTab(tab) {
+    this.activeFileTab = tab;
+    const tabY = document.getElementById('tab-file-yaml');
+    const tabE = document.getElementById('tab-file-env');
+    const paneY = document.getElementById('pane-yaml');
+    const paneE = document.getElementById('pane-env');
+
+    if (tab === 'yaml') {
+      tabY.className = 'px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700';
+      tabE.className = 'px-3 py-1.5 rounded-lg text-slate-400 hover:text-white';
+      paneY.classList.remove('hidden');
+      paneE.classList.add('hidden');
+      if (this.cmEditor) {
+        this.cmEditor.refresh();
+        this.cmEditor.setSize('100%', 560);
+        this.validateAll();
+      }
+    } else {
+      tabE.className = 'px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700';
+      tabY.className = 'px-3 py-1.5 rounded-lg text-slate-400 hover:text-white';
+      paneE.classList.remove('hidden');
+      paneY.classList.add('hidden');
+    }
+  },
+
+  setEnvMode(mode) {
+    this.activeEnvMode = mode;
+    const btnR = document.getElementById('btn-env-raw');
+    const btnT = document.getElementById('btn-env-table');
+    const pR = document.getElementById('env-raw-container');
+    const pT = document.getElementById('env-table-container');
+    const addBtn = document.getElementById('btn-add-env-kv');
+
+    if (mode === 'raw') {
+      this.syncTableToRawEnv();
+      btnR.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-slate-800 text-emerald-400 border border-slate-700';
+      btnT.className = 'px-2.5 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white';
+      pR.classList.remove('hidden');
+      pT.classList.add('hidden');
+      addBtn.classList.add('hidden');
+    } else {
+      this.syncRawToTableEnv();
+      btnT.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-slate-800 text-emerald-400 border border-slate-700';
+      btnR.className = 'px-2.5 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white';
+      pT.classList.remove('hidden');
+      pR.classList.add('hidden');
+      addBtn.classList.remove('hidden');
+    }
+    this.validateAll();
+  },
+
+  syncRawToTableEnv() {
+    const raw = document.getElementById('cd-env-raw').value;
+    const cont = document.getElementById('env-table-container');
+    cont.innerHTML = '';
+    raw.split('\n').forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const idx = trimmed.indexOf('=');
+      const k = idx !== -1 ? trimmed.substring(0, idx).trim() : trimmed;
+      const v = idx !== -1 ? trimmed.substring(idx + 1).trim() : '';
+      this.addEnvKvRow(k, v);
+    });
+  },
+
+  syncTableToRawEnv() {
+    const rows = Array.from(document.querySelectorAll('#env-table-container .env-kv-row'));
+    const lines = rows.map(r => {
+      const k = r.querySelector('.env-k').value.trim();
+      const v = r.querySelector('.env-v').value;
+      return k ? `${k}=${v}` : '';
+    }).filter(Boolean);
+    document.getElementById('cd-env-raw').value = lines.join('\n');
+  },
+
+  addEnvKvRow(k = '', v = '') {
+    const cont = document.getElementById('env-table-container');
+    const div = document.createElement('div');
+    div.className = 'flex gap-2 items-center env-kv-row';
+    div.innerHTML = `
+      <input type="text" placeholder="KEY" value="${escapeHtml(k)}" oninput="ComposeManager.syncTableToRawEnv(); ComposeManager.validateAll();" class="env-k flex-1 bg-[#0b0f17] border border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono text-slate-200 outline-none" />
+      <input type="text" placeholder="VALUE" value="${escapeHtml(v)}" oninput="ComposeManager.syncTableToRawEnv(); ComposeManager.validateAll();" class="env-v flex-2 bg-[#0b0f17] border border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono text-slate-200 outline-none" />
+      <button type="button" onclick="this.parentElement.remove(); ComposeManager.syncTableToRawEnv(); ComposeManager.validateAll();" class="text-rose-400 hover:text-rose-300 px-2 py-1 text-xs">✕</button>
+    `;
+    cont.appendChild(div);
+  },
+
+  async loadDiscoveredStacks() {
+    try {
+      const res = await fetch('/api/docker/compose/discover');
+      const data = await res.json();
+      this.discoveredStacks = data.stacks || [];
+
+      const sel = document.getElementById('cd-stack-select');
+      if (!sel) return;
+      sel.innerHTML = '<option value="__NEW__">✦ Create New Stack...</option>';
+      this.discoveredStacks.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.name;
+        opt.textContent = `${s.name} (${s.workingDir}) ${s.running ? '● Up' : '○ Stopped'}`;
+        sel.appendChild(opt);
+      });
+    } catch(e) {
+      console.warn('loadDiscoveredStacks error:', e);
+    }
+  },
+
+  async onStackSelect(name) {
+    const delBtn = document.getElementById('btn-delete-stack');
+
+    if (name === '__NEW__') {
+      this.isWorkingDirCustom = false;
+      document.getElementById('cd-project-name').value = '';
+      document.getElementById('cd-working-dir').value = '';
+      this.setYaml("version: '3.8'\n");
+      document.getElementById('cd-env-raw').value = '';
+      if (delBtn) {
+        delBtn.classList.add('hidden');
+        delBtn.classList.remove('flex');
+      }
+      this.validateAll();
+      return;
+    }
+
+    const stack = this.discoveredStacks.find(s => s.name === name);
+    if (!stack) return;
+
+    this.isWorkingDirCustom = true;
+    document.getElementById('cd-project-name').value = stack.name;
+    document.getElementById('cd-working-dir').value = stack.workingDir;
+
+    if (delBtn) {
+      delBtn.classList.remove('hidden');
+      delBtn.classList.add('flex');
+    }
+
+    try {
+      const res = await fetch(`/api/docker/compose/stack-content?dir=${encodeURIComponent(stack.workingDir)}&file=${encodeURIComponent(stack.configFile || 'docker-compose.yml')}`);
+      const data = await res.json();
+      if (data.yaml) {
+        this.setYaml(data.yaml);
+      } else {
+        this.setYaml("version: '3.8'\n");
+      }
+      document.getElementById('cd-env-raw').value = data.env || '';
+      this.validateAll();
+    } catch(e) {
+      if (typeof showToast === 'function') showToast('Failed to load stack configuration: ' + e.message, 'error');
+    }
+  },
+
+  deleteStack() {
+    const projectName = document.getElementById('cd-project-name').value.trim();
+    if (!projectName) {
+      if (typeof showToast === 'function') showToast('No stack selected to delete.', 'error');
+      return;
+    }
+    const nameEl = document.getElementById('del-stack-display-name');
+    if (nameEl) nameEl.textContent = `"${projectName}"`;
+
+    const toggle = document.getElementById('toggle-del-volumes');
+    if (toggle) toggle.checked = false;
+    this.onVolumeToggleChange(false);
+
+    const modal = document.getElementById('modal-confirm-delete-stack');
+    if (modal) modal.classList.remove('hidden');
+  },
+
+  closeDeleteConfirm() {
+    const modal = document.getElementById('modal-confirm-delete-stack');
+    if (modal) modal.classList.add('hidden');
+  },
+
+  onVolumeToggleChange(checked) {
+    const safeMsg = document.getElementById('del-volumes-safe-msg');
+    const warnMsg = document.getElementById('del-volumes-warn-msg');
+    if (checked) {
+      if (safeMsg) safeMsg.classList.add('hidden');
+      if (warnMsg) warnMsg.classList.remove('hidden');
+    } else {
+      if (safeMsg) safeMsg.classList.remove('hidden');
+      if (warnMsg) warnMsg.classList.add('hidden');
+    }
+  },
+
+  async executeDeleteStack() {
+    this.closeDeleteConfirm();
+
+    const projectName = document.getElementById('cd-project-name').value.trim();
+    const workingDir = document.getElementById('cd-working-dir').value.trim();
+    const deleteVolumes = !!(document.getElementById('toggle-del-volumes')?.checked);
+
+    if (!projectName) return;
+
+    const consoleDrawer = document.getElementById('cd-console-drawer');
+    const consoleText = document.getElementById('cd-console-text');
+    const statusInd = document.getElementById('cd-status-indicator');
+    const delBtn = document.getElementById('btn-delete-stack');
+
+    consoleDrawer.classList.remove('hidden');
+    consoleText.textContent = `Tearing down stack "${projectName}" (Volumes Purge: ${deleteVolumes ? 'YES' : 'NO'})...\n`;
+    statusInd.textContent = 'Tearing down...';
+    statusInd.className = 'text-rose-400 animate-pulse';
+    if (delBtn) delBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/docker/compose/destroy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectName, workingDir, deleteVolumes })
+      });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Failed to teardown stack.');
+
+      consoleText.textContent += (data.output || 'Stack containers removed and directory deleted.\n');
+      statusInd.textContent = '✔ Stack Deleted';
+      statusInd.className = 'text-emerald-400 font-bold';
+      if (typeof showToast === 'function') showToast(`Stack "${projectName}" deleted successfully.`);
+
+      await this.loadDiscoveredStacks();
+      const sel = document.getElementById('cd-stack-select');
+      if (sel) sel.value = '__NEW__';
+      await this.onStackSelect('__NEW__');
+      if (typeof refreshDockerData === 'function') refreshDockerData();
+    } catch (err) {
+      consoleText.textContent += `\n[ERROR]: ${err.message}`;
+      statusInd.textContent = '✖ Teardown Failed';
+      statusInd.className = 'text-rose-400 font-bold';
+      if (typeof showToast === 'function') showToast(err.message, 'error');
+    } finally {
+      if (delBtn) delBtn.disabled = false;
+    }
+  },
+
+  async loadHelpers() {
+    try {
+      const res = await fetch('/api/docker/compose/helpers');
+      this.discoveredHelpers = await res.json();
+
+      const nDrop = document.getElementById('net-helper-dropdown');
+      const nets = this.discoveredHelpers.networks || [];
+      if (nets.length === 0) {
+        nDrop.innerHTML = '<div class="text-[11px] text-slate-500 italic p-2 text-center">No custom networks found</div>';
+      } else {
+        nDrop.innerHTML = '<div class="text-[10px] uppercase font-bold text-slate-400 px-2 py-1 border-b border-slate-800">Select Network to Inject</div>' +
+          nets.map(n => `<div class="p-2 hover:bg-slate-800 rounded cursor-pointer text-slate-300 font-mono text-[11px] truncate flex justify-between" onclick="ComposeManager.injectNetwork('${escapeHtml(n.name)}')"><span>${escapeHtml(n.name)}</span><span class="text-slate-500 text-[10px]">${escapeHtml(n.driver)}</span></div>`).join('');
+      }
+
+      const vDrop = document.getElementById('vol-helper-dropdown');
+      const vols = this.discoveredHelpers.volumes || [];
+      if (vols.length === 0) {
+        vDrop.innerHTML = '<div class="text-[11px] text-slate-500 italic p-2 text-center">No volumes found</div>';
+      } else {
+        vDrop.innerHTML = '<div class="text-[10px] uppercase font-bold text-slate-400 px-2 py-1 border-b border-slate-800">Select Volume to Inject</div>' +
+          vols.map(v => `<div class="p-2 hover:bg-slate-800 rounded cursor-pointer text-slate-300 font-mono text-[11px] truncate" onclick="ComposeManager.injectVolume('${escapeHtml(v)}')">${escapeHtml(v)}</div>`).join('');
+      }
+    } catch(e) {
+      console.warn('loadHelpers error:', e);
+    }
+  },
+
+  toggleNetHelper(e) {
+    if (e) e.stopPropagation();
+    const d = document.getElementById('net-helper-dropdown');
+    d.classList.toggle('hidden');
+    document.getElementById('vol-helper-dropdown').classList.add('hidden');
+  },
+
+  toggleVolHelper(e) {
+    if (e) e.stopPropagation();
+    const d = document.getElementById('vol-helper-dropdown');
+    d.classList.toggle('hidden');
+    document.getElementById('net-helper-dropdown').classList.add('hidden');
+  },
+
+  injectNetwork(netName) {
+    let yaml = this.getYaml();
+    if (yaml.includes(`${netName}:`)) {
+      if (typeof showToast === 'function') showToast(`Network '${netName}' is already referenced.`);
+      document.getElementById('net-helper-dropdown').classList.add('hidden');
+      return;
+    }
+
+    const netEntry = `  ${netName}:\n    external:\n      name: ${netName}\n`;
+
+    if (/^networks:\s*$/m.test(yaml)) {
+      yaml = yaml.replace(/^networks:\s*$/m, `networks:\n${netEntry}`);
+    } else if (/^networks:/m.test(yaml)) {
+      yaml = yaml.replace(/^networks:[^\n]*\n/m, (m) => `${m}${netEntry}`);
+    } else {
+      yaml += `\n# External Network Injected by BastionCC\nnetworks:\n${netEntry}`;
+    }
+
+    this.setYaml(yaml);
+    if (typeof showToast === 'function') showToast(`Injected network '${netName}'`);
+    document.getElementById('net-helper-dropdown').classList.add('hidden');
+  },
+
+  injectVolume(volName) {
+    let yaml = this.getYaml();
+    if (yaml.includes(`${volName}:`)) {
+      if (typeof showToast === 'function') showToast(`Volume '${volName}' is already referenced.`);
+      document.getElementById('vol-helper-dropdown').classList.add('hidden');
+      return;
+    }
+
+    const volEntry = `  ${volName}:\n    external:\n      name: ${volName}\n`;
+
+    if (/^volumes:\s*$/m.test(yaml)) {
+      yaml = yaml.replace(/^volumes:\s*$/m, `volumes:\n${volEntry}`);
+    } else if (/^volumes:/m.test(yaml)) {
+      yaml = yaml.replace(/^volumes:[^\n]*\n/m, (m) => `${m}${volEntry}`);
+    } else {
+      yaml += `\n# External Volume Injected by BastionCC\nvolumes:\n${volEntry}`;
+    }
+
+    this.setYaml(yaml);
+    if (typeof showToast === 'function') showToast(`Injected volume '${volName}'`);
+    document.getElementById('vol-helper-dropdown').classList.add('hidden');
+  },
+
+  insertSnippet(type) {
+    const boilerplate = "version: '3.8'\nservices:\n  app:\n    image: nginx:alpine\n    restart: unless-stopped\n    ports:\n      - \"8080:80\"\n    environment:\n      - NODE_ENV=production\n    volumes:\n      - app_data:/data\n\nvolumes:\n  app_data:\n";
+    this.setYaml(boilerplate);
+  },
+
+  populateSingleNetworks() {
+    const sel = document.getElementById('single-network');
+    if (!sel) return;
+    sel.innerHTML = '<option value="bridge">bridge (default)</option><option value="host">host</option>';
+    (this.discoveredHelpers.networks || []).forEach(n => {
+      const opt = document.createElement('option');
+      opt.value = n.name;
+      opt.textContent = `${n.name} (${n.driver})`;
+      sel.appendChild(opt);
+    });
+  },
+
+  addSinglePort() {
+    const cont = document.getElementById('single-ports-list');
+    const row = document.createElement('div');
+    row.className = 'flex gap-2 items-center single-port-row';
+    row.innerHTML = `
+      <input type="number" placeholder="Host Port (e.g. 8080)" class="port-h flex-1 bg-[#0b0f17] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 outline-none" />
+      <input type="number" placeholder="Container Port (e.g. 80)" class="port-c flex-1 bg-[#0b0f17] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 outline-none" />
+      <select class="port-proto bg-[#0b0f17] border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200 outline-none"><option value="tcp">tcp</option><option value="udp">udp</option></select>
+      <button type="button" onclick="this.parentElement.remove()" class="text-rose-400 px-2">✕</button>
+    `;
+    cont.appendChild(row);
+  },
+
+  addSingleMount() {
+    const cont = document.getElementById('single-mounts-list');
+    const row = document.createElement('div');
+    row.className = 'flex gap-2 items-center single-mount-row';
+    row.innerHTML = `
+      <input type="text" placeholder="/host/path or volume" class="mnt-src flex-1 bg-[#0b0f17] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 outline-none font-mono" />
+      <input type="text" placeholder="/container/path" class="mnt-dst flex-1 bg-[#0b0f17] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 outline-none font-mono" />
+      <select class="mnt-mode bg-[#0b0f17] border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200 outline-none"><option value="rw">rw</option><option value="ro">ro</option></select>
+      <button type="button" onclick="this.parentElement.remove()" class="text-rose-400 px-2">✕</button>
+    `;
+    cont.appendChild(row);
+  },
+
+  addSingleEnv() {
+    const cont = document.getElementById('single-env-list');
+    const row = document.createElement('div');
+    row.className = 'flex gap-2 items-center single-env-row';
+    row.innerHTML = `
+      <input type="text" placeholder="KEY" class="env-k flex-1 bg-[#0b0f17] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 outline-none font-mono" />
+      <input type="text" placeholder="VALUE" class="env-v flex-1 bg-[#0b0f17] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 outline-none font-mono" />
+      <button type="button" onclick="this.parentElement.remove()" class="text-rose-400 px-2">✕</button>
+    `;
+    cont.appendChild(row);
+  },
+
+  async deploy() {
+    const consoleDrawer = document.getElementById('cd-console-drawer');
+    const consoleText = document.getElementById('cd-console-text');
+    const statusInd = document.getElementById('cd-status-indicator');
+    const btnDeploy = document.getElementById('btn-execute-deploy');
+
+    consoleDrawer.classList.remove('hidden');
+    consoleText.textContent = 'Running pre-flight check on host...\n';
+    statusInd.textContent = 'Verifying...';
+    statusInd.className = 'text-amber-400 animate-pulse';
+    btnDeploy.disabled = true;
+
+    try {
+      if (this.activeMode === 'compose') {
+        const projectName = document.getElementById('cd-project-name').value.trim() || 'custom-stack';
+        const workingDir = document.getElementById('cd-working-dir').value.trim();
+        const composeYaml = this.getYaml();
+        if (this.activeEnvMode === 'table') this.syncTableToRawEnv();
+        const envContent = document.getElementById('cd-env-raw').value;
+
+        const res = await fetch('/api/docker/compose/deploy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectName, workingDir, composeYaml, envContent })
+        });
+        const data = await res.json();
+
+        if (res.status === 422 || data.validationError) {
+          consoleText.textContent = '[PRE-FLIGHT REJECTED BY DOCKER]:\n' + (data.output || 'Invalid compose specification.');
+          statusInd.textContent = '✖ Schema Invalid';
+          statusInd.className = 'text-rose-400 font-bold';
+          if (typeof showToast === 'function') showToast('Compose pre-flight check failed.', 'error');
+          return;
+        }
+
+        if (!res.ok) throw new Error(data.error || 'Stack deployment failed.');
+
+        consoleText.textContent += (data.output || 'docker compose up executed successfully.');
+        statusInd.textContent = '✔ Up & Running';
+        statusInd.className = 'text-emerald-400 font-bold';
+        if (typeof showToast === 'function') showToast(`Stack '${projectName}' deployed successfully.`);
+        await this.loadDiscoveredStacks();
+      } else {
+        const name = document.getElementById('single-name').value.trim();
+        const image = document.getElementById('single-image').value.trim();
+        const network = document.getElementById('single-network').value;
+        const restartPolicy = document.getElementById('single-restart').value;
+
+        const ports = Array.from(document.querySelectorAll('#single-ports-list .single-port-row')).map(r => ({
+          hostPort: r.querySelector('.port-h').value.trim(),
+          containerPort: r.querySelector('.port-c').value.trim(),
+          protocol: r.querySelector('.port-proto').value
+        })).filter(p => p.hostPort && p.containerPort);
+
+        const binds = Array.from(document.querySelectorAll('#single-mounts-list .single-mount-row')).map(r => ({
+          source: r.querySelector('.mnt-src').value.trim(),
+          destination: r.querySelector('.mnt-dst').value.trim(),
+          mode: r.querySelector('.mnt-mode').value
+        })).filter(b => b.source && b.destination);
+
+        const env = Array.from(document.querySelectorAll('#single-env-list .single-env-row')).map(r => ({
+          key: r.querySelector('.env-k').value.trim(),
+          value: r.querySelector('.env-v').value
+        })).filter(e => e.key);
+
+        const res = await fetch('/api/docker/containers/create-single', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, image, network, restartPolicy, ports, binds, env })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Container deployment failed.');
+
+        consoleText.textContent += (data.message || 'Container created and started successfully.');
+        statusInd.textContent = '✔ Container Started';
+        statusInd.className = 'text-emerald-400 font-bold';
+        if (typeof showToast === 'function') showToast(`Container '${name}' deployed.`);
+      }
+    } catch(err) {
+      consoleText.textContent += `\n[ERROR]: ${err.message}`;
+      statusInd.textContent = '✖ Failed';
+      statusInd.className = 'text-rose-400 font-bold';
+    } finally {
+      this.validateYamlSyntax();
+    }
+  }
+};
 /* BASTIONCC_V198_SCRIPT_END */
 </script>
 <!-- BASTIONCC_V198_MODALS_START -->
@@ -2538,6 +3330,7 @@ window.PruneManager = {
     <div class="sp-modal-footer" style="padding: 14px 20px; border-top: 1px solid #242c38; margin: 0; background: #0d1117;">
       <button type="button" class="sp-btn-sec" onclick="closeDeleteModal()">Cancel</button>
       <button type="button" id="sp-btn-confirm-delete" class="sp-btn-danger-solid" onclick="executeContainerDelete()">Delete Container</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2586,7 +3379,7 @@ window.PruneManager = {
               </th>
               <th class="py-2.5 px-3">Repository : Tag</th>
               <th class="py-2.5 px-3">Image ID</th>
-              <th class="py-2.5 px-3">Size</th>
+              <th class="py-2.5 px-3" title="Uncompressed local disk usage of extracted layers. Compressed download size on GitHub/Docker Hub is significantly smaller."><span class="inline-flex items-center gap-1">Size <span class="cursor-help text-slate-400 hover:text-slate-200 transition-colors inline-flex items-center ml-1" title="Uncompressed local disk usage of extracted layers. Compressed download size on GitHub/Docker Hub is significantly smaller."><svg class="w-3.5 h-3.5 inline-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></span></span></th>
               <th class="py-2.5 px-3">Status</th>
             </tr>
           </thead>
@@ -2610,6 +3403,472 @@ window.PruneManager = {
     </div>
   </div>
 </div>
+
+<!-- Compose & Deploy Master Modal -->
+<!-- Compose & Deploy Master Modal -->
+<div id="modal-compose-deploy" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm hidden" role="dialog" aria-modal="true">
+  <style id="bcc-cm-bundle">
+    /* --- Complete Official CodeMirror 5 Core Stylesheet --- */
+    .CodeMirror {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+      font-size: 13px !important;
+      line-height: 20px !important;
+      height: 560px !important;
+      color: #f8f8f2 !important;
+      direction: ltr !important;
+      text-align: left !important;
+      position: relative !important;
+      overflow: hidden !important;
+      background: #0b0f17 !important;
+      border: 1px solid #334155 !important;
+      border-radius: 8px !important;
+    }
+
+    .CodeMirror-lines {
+      padding: 6px 0 !important;
+      cursor: text !important;
+      min-height: 1px !important;
+    }
+
+    /* Pre line resets to counteract Tailwind resets */
+    .CodeMirror pre.CodeMirror-line,
+    .CodeMirror pre.CodeMirror-line-like {
+      padding: 0 6px !important;
+      margin: 0 !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      font-family: inherit !important;
+      font-size: 13px !important;
+      line-height: 20px !important;
+      white-space: pre !important;
+      word-wrap: normal !important;
+      color: inherit !important;
+      z-index: 2 !important;
+      position: relative !important;
+      overflow: visible !important;
+      direction: ltr !important;
+      text-align: left !important;
+      box-sizing: border-box !important;
+    }
+
+    /* CRITICAL: Must be position: absolute to stay out of line flow */
+    .CodeMirror-gutter-wrapper {
+      position: absolute !important;
+      z-index: 4 !important;
+      background: none !important;
+      border: none !important;
+      user-select: none !important;
+      -webkit-user-select: none !important;
+      height: 100% !important;
+      top: 0 !important;
+    }
+
+    .CodeMirror-gutter-elt {
+      position: absolute !important;
+      cursor: default !important;
+      z-index: 4 !important;
+      top: 0 !important;
+    }
+
+    .CodeMirror-gutter-background {
+      position: absolute !important;
+      top: 0 !important;
+      bottom: 0 !important;
+      z-index: 4 !important;
+    }
+
+    /* Box-Sizing Fix for Tailwind */
+    .CodeMirror-scroll,
+    .CodeMirror-sizer,
+    .CodeMirror-gutter,
+    .CodeMirror-gutters,
+    .CodeMirror-linenumber {
+      -moz-box-sizing: content-box !important;
+      box-sizing: content-box !important;
+    }
+
+    /* Left Gutters Container */
+    .CodeMirror-gutters {
+      position: absolute !important;
+      left: 0 !important;
+      top: 0 !important;
+      min-height: 100% !important;
+      z-index: 3 !important;
+      background-color: #070a0f !important;
+      border-right: 1px solid #1e293b !important;
+      white-space: nowrap !important;
+      display: block !important;
+    }
+
+    .CodeMirror-gutter {
+      white-space: normal !important;
+      height: 100% !important;
+      display: inline-block !important;
+      vertical-align: top !important;
+      margin-bottom: -50px !important;
+    }
+
+    .CodeMirror-linenumbers {
+      width: 34px !important;
+    }
+
+    .CodeMirror-linenumber {
+      padding: 0 6px 0 2px !important;
+      min-width: 24px !important;
+      text-align: right !important;
+      color: #6272a4 !important;
+      font-size: 12px !important;
+      line-height: 20px !important;
+      white-space: nowrap !important;
+      display: block !important;
+    }
+
+    /* Red Dot Missing Variable Linter Gutter */
+    .env-lint-gutter {
+      width: 16px !important;
+      background-color: #070a0f !important;
+    }
+
+    .env-missing-dot {
+      width: 8px !important;
+      height: 8px !important;
+      border-radius: 50% !important;
+      background-color: #ef4444 !important;
+      box-shadow: 0 0 6px #ef4444 !important;
+      margin: 6px auto 0 auto !important;
+      cursor: pointer !important;
+    }
+
+    /* Hidden Measure Element (prevents typing/cursor jump) */
+    .CodeMirror-measure {
+      position: absolute !important;
+      width: 100% !important;
+      height: 0 !important;
+      overflow: hidden !important;
+      visibility: hidden !important;
+    }
+    .CodeMirror-measure pre { position: static !important; }
+
+    /* Cursor */
+    .CodeMirror-cursor {
+      border-left: 2px solid #38bdf8 !important;
+      border-right: none !important;
+      width: 0 !important;
+      position: absolute !important;
+      pointer-events: none !important;
+    }
+    div.CodeMirror-cursors {
+      visibility: hidden;
+      position: relative;
+      z-index: 3;
+    }
+    .CodeMirror-focused div.CodeMirror-cursors {
+      visibility: visible !important;
+    }
+
+    /* Scroll & Sizer */
+    .CodeMirror-scroll {
+      overflow: scroll !important;
+      margin-bottom: -50px !important;
+      margin-right: -50px !important;
+      padding-bottom: 50px !important;
+      height: 100% !important;
+      outline: none !important;
+      position: relative !important;
+      background-color: #0b0f17 !important;
+    }
+    .CodeMirror-sizer {
+      position: relative !important;
+      border-right: 50px solid transparent !important;
+      background-color: #0b0f17 !important;
+    }
+
+    .CodeMirror-vscrollbar,
+    .CodeMirror-hscrollbar,
+    .CodeMirror-scrollbar-filler,
+    .CodeMirror-gutter-filler {
+      position: absolute !important;
+      z-index: 6 !important;
+      display: none !important;
+    }
+
+    /* Dracula Theme Colors */
+    .cm-s-dracula.CodeMirror { background: #0b0f17 !important; color: #f8f8f2 !important; }
+    .cm-s-dracula .CodeMirror-selected { background: #282a36 !important; }
+    .cm-s-dracula .cm-keyword { color: #ff79c6 !important; font-weight: bold !important; }
+    .cm-s-dracula .cm-atom, .cm-s-dracula .cm-number { color: #bd93f9 !important; }
+    .cm-s-dracula .cm-def { color: #50fa7b !important; }
+    .cm-s-dracula .cm-variable { color: #f8f8f2 !important; }
+    .cm-s-dracula .cm-property { color: #8be9fd !important; font-weight: 600 !important; }
+    .cm-s-dracula .cm-operator { color: #ff79c6 !important; }
+    .cm-s-dracula .cm-string { color: #f1fa8c !important; }
+    .cm-s-dracula .cm-comment { color: #6272a4 !important; font-style: italic !important; }
+  </style>
+  
+  <!-- CodeMirror Complete Core + Dracula + Gutter Bundle -->
+  
+
+  <div class="relative w-[92vw] max-w-7xl mx-4 bg-[#111622] border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[90vh] text-slate-200">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-[#0d121c] shrink-0">
+      <div class="flex items-center gap-4">
+        <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-white tracking-wide">Compose & Container Deployer</h3>
+          <p class="text-xs text-slate-400">Manage multi-container Docker Compose stacks or launch standalone containers.</p>
+        </div>
+      </div>
+
+      <!-- Mode Selector -->
+      <div class="flex items-center gap-3">
+        <div class="flex bg-slate-900 border border-slate-700/80 p-1 rounded-xl text-xs font-semibold">
+          <button type="button" id="btn-mode-compose" onclick="ComposeManager.setMode('compose')" class="px-3.5 py-1.5 rounded-lg bg-emerald-600 text-white shadow transition-colors">
+            Docker Compose
+          </button>
+          <button type="button" id="btn-mode-single" onclick="ComposeManager.setMode('single')" class="px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-white transition-colors">
+            Single Container
+          </button>
+        </div>
+        <button type="button" onclick="ComposeManager.close()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Body Container -->
+    <div class="flex-1 overflow-y-auto p-6 space-y-4">
+      <!-- Top Target Row -->
+      <div id="cd-top-target-row" class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800 shrink-0">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Target Stack / Project</label>
+          <div class="flex items-center gap-2">
+            <select id="cd-stack-select" onchange="ComposeManager.onStackSelect(this.value)" class="w-full bg-[#0b0f17] border border-slate-700 rounded-lg px-3 py-2 text-xs font-medium text-slate-200 outline-none focus:border-emerald-500">
+            <option value="__NEW__">✦ Create New Stack...</option>
+          </select>
+            <button type="button" id="btn-delete-stack" onclick="ComposeManager.deleteStack()" class="hidden px-2.5 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 text-xs font-semibold transition-colors items-center gap-1.5 shrink-0" title="Teardown containers and delete stack files">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+              Delete Stack
+            </button>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Project / Stack Name</label>
+          <input type="text" id="cd-project-name" placeholder="e.g., custom-app" oninput="ComposeManager.onProjectNameInput(this.value)" class="w-full bg-[#0b0f17] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-emerald-500 font-mono" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Host Working Directory (empty = default location)</label>
+          <input type="text" id="cd-working-dir" placeholder="~/stacks/custom-app" oninput="ComposeManager.onWorkingDirManualEdit()" class="w-full bg-[#0b0f17] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-emerald-500 font-mono" />
+        </div>
+      </div>
+
+      <!-- VIEW 1: DOCKER COMPOSE -->
+      <div id="view-compose-mode" class="space-y-3">
+        <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+          <div class="flex gap-2 text-xs font-semibold">
+            <button type="button" id="tab-file-yaml" onclick="ComposeManager.setFileTab('yaml')" class="px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700">docker-compose.yml</button>
+            <button type="button" id="tab-file-env" onclick="ComposeManager.setFileTab('env')" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white">.env File</button>
+          </div>
+          <div>
+            <button type="button" onclick="ComposeManager.insertSnippet('boilerplate')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400">
+              Reset Template
+            </button>
+          </div>
+        </div>
+
+        <!-- Strict Container Isolation on #pane-yaml -->
+        <div id="pane-yaml" class="w-full overflow-hidden rounded-xl border border-slate-700 bg-[#0b0f17]" style="height: 560px; min-height: 560px; max-height: 560px; position: relative;">
+          <textarea id="cm-compose-textarea" style="width: 100%; height: 560px; min-height: 560px; background-color: #0b0f17; color: #f8f8f2; font-family: monospace; border: none; padding: 12px; outline: none; resize: none;"></textarea>
+        </div>
+
+        <!-- .env Pane -->
+        <div id="pane-env" class="hidden space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex gap-2">
+              <button type="button" id="btn-env-raw" onclick="ComposeManager.setEnvMode('raw')" class="px-2.5 py-1 rounded text-xs font-semibold bg-slate-800 text-emerald-400 border border-slate-700">Raw Text</button>
+              <button type="button" id="btn-env-table" onclick="ComposeManager.setEnvMode('table')" class="px-2.5 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white">Key-Value Form</button>
+            </div>
+            <button type="button" id="btn-add-env-kv" onclick="ComposeManager.addEnvKvRow()" class="hidden px-2 py-1 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded border border-slate-700">+ Add Row</button>
+          </div>
+          <div id="env-raw-container">
+            <textarea id="cd-env-raw" rows="18" placeholder="# Environment variables&#10;PORT=8080&#10;DB_PASSWORD=secret" class="w-full bg-[#0b0f17] border border-slate-700 rounded-lg p-3 font-mono text-xs text-slate-200 outline-none focus:border-emerald-500"></textarea>
+          </div>
+          <div id="env-table-container" class="hidden space-y-2 max-h-96 overflow-y-auto"></div>
+        </div>
+      </div>
+
+      <!-- VIEW 2: SINGLE CONTAINER -->
+      <div id="view-single-mode" class="hidden space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1">Container Name</label>
+            <input type="text" id="single-name" placeholder="my-container" class="w-full bg-[#0b0f17] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none font-mono" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1">Docker Image Tag</label>
+            <input type="text" id="single-image" placeholder="nginx:alpine" class="w-full bg-[#0b0f17] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none font-mono" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1">Network</label>
+            <select id="single-network" class="w-full bg-[#0b0f17] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1">Restart Policy</label>
+            <select id="single-restart" class="w-full bg-[#0b0f17] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none">
+              <option value="unless-stopped">unless-stopped</option>
+              <option value="always">always</option>
+              <option value="on-failure">on-failure</option>
+              <option value="no">no</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-xs font-bold text-slate-400 uppercase">Port Mappings</label>
+            <button type="button" onclick="ComposeManager.addSinglePort()" class="text-xs text-emerald-400 hover:underline">+ Add Port</button>
+          </div>
+          <div id="single-ports-list" class="space-y-2"></div>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-xs font-bold text-slate-400 uppercase">Volume / Path Mappings</label>
+            <button type="button" onclick="ComposeManager.addSingleMount()" class="text-xs text-emerald-400 hover:underline">+ Add Mount</button>
+          </div>
+          <div id="single-mounts-list" class="space-y-2"></div>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-xs font-bold text-slate-400 uppercase">Environment Variables</label>
+            <button type="button" onclick="ComposeManager.addSingleEnv()" class="text-xs text-emerald-400 hover:underline">+ Add Variable</button>
+          </div>
+          <div id="single-env-list" class="space-y-2"></div>
+        </div>
+      </div>
+
+      <!-- Execution Console Drawer -->
+      
+      <!-- Live Validation Alert Banner -->
+      <div id="cd-validation-banner" class="hidden flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-mono">
+        <svg class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <div class="flex-1 break-all" id="cd-validation-banner-text"></div>
+      </div>
+
+      <div id="cd-console-drawer" class="hidden bg-[#070a0f] border border-slate-800 rounded-xl p-3 space-y-1 font-mono text-xs">
+        <div class="text-slate-400 font-bold border-b border-slate-800/80 pb-1 flex justify-between">
+          <span>Deployment Output:</span>
+          <span id="cd-status-indicator" class="text-emerald-400 animate-pulse">Running...</span>
+        </div>
+        <pre id="cd-console-text" class="text-slate-300 max-h-44 overflow-y-auto whitespace-pre-wrap"></pre>
+      </div>
+    </div>
+
+    <!-- Footer with Helper Tools -->
+    <div class="flex items-center justify-between px-6 py-4 border-t border-slate-800 bg-[#0d121c] shrink-0">
+      <button type="button" onclick="ComposeManager.close()" class="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg">
+        Cancel
+      </button>
+
+      <div id="footer-compose-helpers" class="flex items-center gap-3">
+        <div class="relative inline-block">
+          <button type="button" onclick="ComposeManager.toggleNetHelper(event)" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-400">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <span>+ Network Helper</span>
+          </button>
+          <div id="net-helper-dropdown" class="hidden absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-[100] p-2 space-y-1 text-xs max-h-60 overflow-y-auto"></div>
+        </div>
+
+        <div class="relative inline-block">
+          <button type="button" onclick="ComposeManager.toggleVolHelper(event)" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-purple-400">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+            <span>+ Volume Helper</span>
+          </button>
+          <div id="vol-helper-dropdown" class="hidden absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-[100] p-2 space-y-1 text-xs max-h-60 overflow-y-auto"></div>
+        </div>
+      </div>
+
+      <button id="btn-execute-deploy" type="button" onclick="ComposeManager.deploy()" class="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-lg shadow-sm border border-emerald-500/30 transition-all">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <span id="btn-deploy-text">Deploy Stack</span>
+      </button>
+    </div>
+  </div>
+</div>
 <!-- BASTIONCC_V198_MODALS_END -->
+
+<!-- Modal: Confirm Stack Deletion -->
+<div id="modal-confirm-delete-stack" class="hidden fixed inset-0 z-[70] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="bg-[#0f172a] border border-rose-500/40 rounded-xl shadow-2xl max-w-md w-full p-5 space-y-4 text-slate-200">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+      <div class="flex items-center gap-2.5 text-rose-400 font-semibold text-sm">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <span>Confirm Stack Deletion</span>
+      </div>
+      <button type="button" onclick="ComposeManager.closeDeleteConfirm()" class="text-slate-400 hover:text-white text-lg">✕</button>
+    </div>
+
+    <div class="space-y-3 text-xs text-slate-300 leading-relaxed">
+      <p>Are you sure you want to delete stack <span id="del-stack-display-name" class="font-bold text-rose-400 font-mono"></span>?</p>
+      
+      <div class="p-3 bg-slate-900 border border-slate-800 rounded-lg space-y-2">
+        <label class="relative inline-flex items-center cursor-pointer select-none">
+          <input type="checkbox" id="toggle-del-volumes" class="sr-only peer" onchange="ComposeManager.onVolumeToggleChange(this.checked)">
+          <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+          <span class="ml-2.5 text-xs font-semibold text-slate-200">Also delete persistent volumes (<code class="text-amber-400 font-mono text-[11px]">down -v</code>)</span>
+        </label>
+      </div>
+
+      <!-- State 1: Default Safe Notice -->
+      <div id="del-volumes-safe-msg" class="p-3 bg-slate-800/70 border border-slate-700/60 rounded-lg text-slate-300 text-[11px] flex items-start gap-2">
+        <svg class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <span><strong>Persistent storage is safe:</strong> Containers and stack configs will be removed, but database data and named volumes will remain safely intact on host disk.</span>
+      </div>
+
+      <!-- State 2: Volume Purge Warning -->
+      <div id="del-volumes-warn-msg" class="hidden p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-[11px] flex items-start gap-2">
+        <svg class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <span><strong>Destructive volume purge:</strong> All persistent database and storage volumes declared by this stack will be permanently wiped.</span>
+      </div>
+    </div>
+
+    <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+      <button type="button" onclick="ComposeManager.closeDeleteConfirm()" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 transition-colors">
+        Cancel
+      </button>
+      <button type="button" id="btn-confirm-execute-delete" onclick="ComposeManager.executeDeleteStack()" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition-colors flex items-center gap-1.5 shadow-lg shadow-rose-900/30">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+        </svg>
+        Delete Stack
+      </button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
