@@ -25,19 +25,21 @@
   ![picture](/images/dockermanager.png)
 
   From V1.9.8.18-beta:
-    * Basic tools such as start, stop, restart, exec, log viewer, image grype scan and delete container
-    * Docker compose / stack editor and deployment tool
-    * Single container editor
+  
+    - Basic tools such as start, stop, restart, exec, log viewer, image grype scan and delete container
+    - Docker compose / stack editor and deployment tool
+    - Single container editor
   
   
 ### Create "Macros" i.e command shortcuts you may use often, these will appear above the xterm terminal window and import Macro templates from your other servers to save having to recreate
   ![picture](/images/quickcommandsbcc.png)
   
 ### Add logs you would like to monitor, these appear as buttons in the log viewer page and you can add 3 types:
-    * Files (direct links to files)
-    * Folders (system scans folder and displays the button as a drop down list to select)
-    * Systemd / Journalctl (Enter the term you would like to isolate i.e UFW)
-    * Clone preset logs to other servers
+
+    - Files (direct links to files)
+    - Folders (system scans folder and displays the button as a drop down list to select)
+    - Systemd / Journalctl (Enter the term you would like to isolate i.e UFW)
+    - Clone preset logs to other servers
     
   ![picture](/images/quickcommandsbcc.png)
   
@@ -47,9 +49,9 @@
 
   Includes the following security audits:
 
-  * WHOIS Lookup
-  * Threat Detection Score (Local or via AbuseIPDB)
-  * Ban Actions (Single IP or /24) Via Crowdsec > Fail2ban > Firewall
+  - WHOIS Lookup
+  - Threat Detection Score (Local or via AbuseIPDB)
+  - Ban Actions (Single IP or /24) Via Crowdsec > Fail2ban > Firewall
   
 ### SFTP file management with drag and drop ability to transfer files.
     
@@ -66,11 +68,10 @@
 
 ~~~
 Save the docker-compose.yml file to your preferred location. Double check the file points to the latest version shown in packages.
-Edit your PubKey SSH Path
 Docker Compose up
 visit localhost:3000 or 127.0.0.1:3000
 ~~~
-
+**Or download the latest Appimage**
 
 ## Security Approach
 
