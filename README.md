@@ -23,6 +23,12 @@
 
 ### Docker management per server (like portainer but simple and lightweight no plugin required)
   ![picture](/images/dockermanager.png)
+
+  From V1.9.8.18-beta:
+    * Basic tools such as start, stop, restart, exec, log viewer, image grype scan and delete container
+    * Docker compose / stack editor and deployment tool
+    * Single container editor
+  
   
 ### Create "Macros" i.e command shortcuts you may use often, these will appear above the xterm terminal window and import Macro templates from your other servers to save having to recreate
   ![picture](/images/quickcommandsbcc.png)
