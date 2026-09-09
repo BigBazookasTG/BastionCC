@@ -6,6 +6,28 @@
     <title>BastionCC Control Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+  /* BASTION_DOCKER_FETCH_INTERCEPTOR */
+  (function() {
+    const _origFetch = window.fetch;
+    window.fetch = function(url, options) {
+      if (typeof url === 'string' && url.startsWith('/api/docker/')) {
+        options = options || {};
+        options.headers = options.headers || {};
+        const token = (typeof authToken !== 'undefined' && authToken) ? authToken : (sessionStorage.getItem('bastion_pin') || '');
+        if (token) {
+          if (options.headers instanceof Headers) {
+            if (!options.headers.has('Authorization')) options.headers.set('Authorization', 'Bearer ' + token);
+          } else if (Array.isArray(options.headers)) {
+            options.headers.push(['Authorization', 'Bearer ' + token]);
+          } else if (typeof options.headers === 'object') {
+            if (!options.headers['Authorization']) options.headers['Authorization'] = 'Bearer ' + token;
+          }
+        }
+      }
+      return _origFetch.call(this, url, options);
+    };
+  })();
+
 
     // Global PIN Modal Handlers
     // Global PIN Modal Handlers (Targeting original pin-reset-modal)
@@ -497,7 +519,7 @@
             <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
             <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
                 <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
-                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8.16 Changelog</span></div>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8.20 Changelog</span></div>
             </div>
         </div>
     </nav>
@@ -553,7 +575,23 @@
             
             <div id="view-files" class="absolute inset-0 bg-white dark:bg-darkNav p-4 hidden flex-col border-4 border-transparent">
                 <div class="text-sm border-b border-slate-200 dark:border-slate-800 pb-2 mb-2 flex space-x-2"><button id="btn-sftp-up" class="px-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition rounded font-semibold text-xs">UP</button><span id="sftp-path" class="font-mono text-slate-500 py-1">/root</span></div>
-                <div id="sftp-grid" class="flex-1 overflow-y-auto"></div>
+                <div id="sftp-grid" class="flex-1 overflow-y-auto transition-opacity duration-200"></div>
+                <!-- SFTP Upload Progress Bar (Docked Bottom Strip) -->
+                <div id="sftp-upload-progress" class="hidden mt-2 p-2.5 rounded-lg border border-orange-500/30 bg-orange-500/5 dark:bg-slate-900/90 shadow-lg">
+                  <div class="flex items-center justify-between text-xs mb-1.5">
+                    <div class="flex items-center space-x-2 truncate">
+                      <span id="sftp-progress-dot" class="inline-block w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
+                      <span id="sftp-progress-filename" class="font-mono text-slate-200 truncate max-w-[240px]">uploading...</span>
+                    </div>
+                    <div class="flex items-center space-x-2 font-mono text-xs">
+                      <span id="sftp-progress-bytes" class="text-slate-400">0 B / 0 B</span>
+                      <span id="sftp-progress-pct" class="font-bold text-orange-400">0%</span>
+                    </div>
+                  </div>
+                  <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                    <div id="sftp-progress-bar" class="bg-orange-500 h-full rounded-full transition-all duration-100 ease-out" style="width: 0%"></div>
+                  </div>
+                </div>
             </div>
 
             <div id="view-logs" class="absolute inset-0 bg-white dark:bg-darkNav p-4 hidden flex-col">
@@ -705,7 +743,7 @@
 
                 <div class="bg-[#1e1e1e] rounded-lg p-4 border border-slate-700 flex-1 overflow-y-auto shadow-inner min-h-[200px]">
                     <div id="securityTerm" class="font-mono text-sm text-sky-400 whitespace-pre">
-                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9.8.16</p>
+                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9.8.20</p>
                         <p class="text-slate-500">Ready for target acquisition...</p>
                         <p class="text-accent mt-2">> _</p>
                     </div>
@@ -856,23 +894,32 @@
 
         function escapeHtml(str) { return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
 
-        function showToast(message, type = 'success') {
+        function showToast(message, type = 'success', duration = 4000) {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
-            const isSuccess = type === 'success';
-            toast.className = `pointer-events-auto flex items-center space-x-2 px-4 py-2.5 rounded-[10px] shadow-2xl text-xs font-semibold text-white border transition-all duration-300 toast-animate ${
-                isSuccess ? 'bg-slate-900 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-rose-500 text-rose-400'
-            }`;
-            toast.innerHTML = `
-                <span class="text-sm">${isSuccess ? '✔' : '❌'}</span>
-                <span>${escapeHtml(message)}</span>
-            `;
+            let themeClass = 'bg-slate-900 border-rose-500 text-rose-400';
+            let iconHtml = '<span class="text-sm">❌</span>';
+
+            if (type === 'success') {
+                themeClass = 'bg-slate-900 border-emerald-500 text-emerald-400';
+                iconHtml = '<span class="text-sm">✔</span>';
+            } else if (type === 'info' || type === 'warning' || type === 'orange') {
+                themeClass = 'bg-slate-900 border-orange-500 text-orange-400 shadow-orange-500/10';
+                iconHtml = '<svg class="w-4 h-4 text-orange-400 shrink-0 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>';
+            }
+
+            toast.className = `pointer-events-auto flex items-center space-x-2.5 px-4 py-2.5 rounded-[10px] shadow-2xl text-xs font-semibold border transition-all duration-300 toast-animate ${themeClass}`;
+            toast.innerHTML = `${iconHtml}<span>${escapeHtml(message)}</span>`;
             container.appendChild(toast);
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateY(-10px)';
-                setTimeout(() => toast.remove(), 300);
-            }, 4000);
+
+            if (duration > 0) {
+                setTimeout(() => {
+                    toast.style.opacity = '0';
+                    toast.style.transform = 'translateY(-10px)';
+                    setTimeout(() => toast.remove(), 300);
+                }, duration);
+            }
+            return toast;
         }
 
         window.addEventListener('DOMContentLoaded', async () => {
@@ -1341,8 +1388,27 @@
             
             socket.on('sftp-list-data', renderSftpGrid);
             socket.on('sftp-download-chunk', ({chunk}) => downloadedChunks.push(new Uint8Array(chunk)));
-            socket.on('sftp-download-complete', (filePath) => { const blob = new Blob(downloadedChunks), url = window.URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = filePath.split('/').pop(); a.click(); window.URL.revokeObjectURL(url); downloadedChunks = []; });
-            socket.on('sftp-upload-complete', () => socket.emit('sftp-list', currentSftpPath));
+            socket.on('sftp-download-complete', (filePath) => {
+                if (activeDownloadToast) { activeDownloadToast.remove(); activeDownloadToast = null; }
+                const blob = new Blob(downloadedChunks), url = window.URL.createObjectURL(blob), a = document.createElement('a');
+                a.href = url; a.download = filePath.split('/').pop(); a.click(); window.URL.revokeObjectURL(url);
+                downloadedChunks = [];
+                showToast('Downloaded ' + filePath.split('/').pop(), 'success');
+            });
+            socket.on('sftp-upload-complete', () => {
+                const bar = document.getElementById('sftp-progress-bar');
+                const pct = document.getElementById('sftp-progress-pct');
+                const dot = document.getElementById('sftp-progress-dot');
+                if (bar) { bar.style.width = '100%'; bar.classList.remove('bg-orange-500'); bar.classList.add('bg-emerald-500'); }
+                if (pct) { pct.textContent = '100%'; pct.classList.remove('text-orange-400'); pct.classList.add('text-emerald-400'); }
+                if (dot) { dot.classList.remove('bg-orange-500', 'animate-pulse'); dot.classList.add('bg-emerald-500'); }
+                setTimeout(() => {
+                    const prog = document.getElementById('sftp-upload-progress');
+                    if (prog) prog.classList.add('hidden');
+                    sftpUnlockUi();
+                    socket.emit('sftp-list', currentSftpPath);
+                }, 800);
+            });
             socket.on('connect_error', (err) => { if (err.message === 'System requires setup' || err.message === 'Invalid token') window.location.reload(); });
         }
 
@@ -1875,24 +1941,168 @@
             switchTab('terminal'); 
         }
 
-        function renderSftpGrid(data) {
-            currentSftpPath = data.path; document.getElementById('sftp-path').innerText = currentSftpPath;
-            document.getElementById('sftp-grid').innerHTML = data.items.map(i => `<div data-name="${escapeHtml(i.name)}" data-isdir="${i.isDir}" class="sftp-item p-2 border-b border-slate-200 dark:border-slate-800 text-sm font-mono cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 flex justify-between transition-colors"><span class="pointer-events-none">${i.isDir ? '📁' : '📄'} ${escapeHtml(i.name)}</span><span class="text-slate-500 pointer-events-none">${i.isDir ? '' : Math.round(i.size/1024)+' KB'}</span></div>`).join('');
-            document.getElementById('sftp-grid').querySelectorAll('.sftp-item').forEach(el => el.addEventListener('dblclick', () => { if(el.dataset.isdir === 'true') navDir(el.dataset.name); else downloadFile(el.dataset.name); }));
+        function sftpFormatBytes(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            if (i === 0) return bytes + ' B';
+            return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
         }
 
-        function navDir(folder) { const sep = currentSftpPath.endsWith('/') ? '' : '/'; socket.emit('sftp-list', currentSftpPath + sep + folder); }
-        function navUp() { const parts = currentSftpPath.split('/').filter(Boolean); parts.pop(); socket.emit('sftp-list', '/' + (parts.length > 0 ? parts.join('/') : '')); }
-        function downloadFile(filename) { downloadedChunks = []; const sep = currentSftpPath.endsWith('/') ? '' : '/'; socket.emit('sftp-download', currentSftpPath + sep + filename); }
+        let sftpUploadActive = false;
+        function sftpLockUi() {
+            sftpUploadActive = true;
+            const grid = document.getElementById('sftp-grid');
+            const upBtn = document.getElementById('btn-sftp-up');
+            const pathEl = document.getElementById('sftp-path');
+            if (grid) grid.classList.add('pointer-events-none', 'opacity-50');
+            if (upBtn) { upBtn.classList.add('pointer-events-none', 'opacity-50'); upBtn.disabled = true; }
+            if (pathEl) pathEl.classList.add('pointer-events-none', 'opacity-50');
+        }
+
+        function sftpUnlockUi() {
+            sftpUploadActive = false;
+            const grid = document.getElementById('sftp-grid');
+            const upBtn = document.getElementById('btn-sftp-up');
+            const pathEl = document.getElementById('sftp-path');
+            if (grid) grid.classList.remove('pointer-events-none', 'opacity-50');
+            if (upBtn) { upBtn.classList.remove('pointer-events-none', 'opacity-50'); upBtn.disabled = false; }
+            if (pathEl) pathEl.classList.remove('pointer-events-none', 'opacity-50');
+        }
+
+        function renderSftpBreadcrumbs(pathStr) {
+            const container = document.getElementById('sftp-path');
+            if (!container) return;
+            const parts = pathStr.split('/').filter(Boolean);
+            let html = '<span class="hover:text-orange-400 cursor-pointer transition font-mono" onclick="navToPath(\'/\')">/</span>';
+            let accumulated = '';
+            parts.forEach((p, idx) => {
+                accumulated += '/' + p;
+                const target = accumulated;
+                const isLast = idx === parts.length - 1;
+                html += '<span class="text-slate-600 px-0.5 font-mono">/</span>' +
+                        '<span class="hover:text-orange-400 cursor-pointer transition font-mono ' + (isLast ? 'text-orange-400 font-semibold' : 'text-slate-400') + '" onclick="navToPath(\'' + escapeHtml(target) + '\')">' + escapeHtml(p) + '</span>';
+            });
+            container.innerHTML = html;
+        }
+
+        window.navToPath = function(p) {
+            if (sftpUploadActive) return;
+            socket.emit('sftp-list', p);
+        };
+
+        function renderSftpGrid(data) {
+            currentSftpPath = data.path;
+            renderSftpBreadcrumbs(currentSftpPath);
+
+            const folderSvg = '<svg class="w-4 h-4 inline-block mr-2 text-orange-500 dark:text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>';
+            const fileSvg = '<svg class="w-4 h-4 inline-block mr-2 text-slate-400 dark:text-slate-500 group-hover:text-orange-400 transition-colors shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>';
+
+            document.getElementById('sftp-grid').innerHTML = data.items.map(i =>
+                '<div class="sftp-item flex items-center justify-between p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800/60 rounded cursor-pointer group text-xs select-none transition" data-name="' + escapeHtml(i.name) + '" data-isdir="' + i.isDir + '">' +
+                  '<div class="flex items-center space-x-1.5 truncate min-w-0">' +
+                    (i.isDir ? folderSvg : fileSvg) +
+                    '<span class="truncate font-mono text-slate-700 dark:text-slate-200">' + escapeHtml(i.name) + '</span>' +
+                  '</div>' +
+                  '<span class="text-slate-500 font-mono text-xs pointer-events-none ml-2 shrink-0">' + (i.isDir ? '' : sftpFormatBytes(i.size)) + '</span>' +
+                '</div>'
+            ).join('');
+
+            document.getElementById('sftp-grid').querySelectorAll('.sftp-item').forEach(el => el.addEventListener('dblclick', () => {
+                if (sftpUploadActive) return;
+                if (el.dataset.isdir === 'true') navDir(el.dataset.name);
+                else downloadFile(el.dataset.name);
+            }));
+        }
+
+        function navDir(folder) {
+            if (sftpUploadActive) return;
+            const sep = currentSftpPath.endsWith('/') ? '' : '/';
+            socket.emit('sftp-list', currentSftpPath + sep + folder);
+        }
+
+        function navUp() {
+            if (sftpUploadActive) return;
+            const parts = currentSftpPath.split('/').filter(Boolean);
+            parts.pop();
+            socket.emit('sftp-list', '/' + (parts.length > 0 ? parts.join('/') : ''));
+        }
+
+        let activeDownloadToast = null;
+        function downloadFile(filename) {
+            if (sftpUploadActive) return;
+            downloadedChunks = [];
+            if (activeDownloadToast) { activeDownloadToast.remove(); activeDownloadToast = null; }
+            activeDownloadToast = showToast('Assembling the large file transfer please wait (may take some time) Do not navigate away', 'info', 0);
+            const sep = currentSftpPath.endsWith('/') ? '' : '/';
+            socket.emit('sftp-download', currentSftpPath + sep + filename);
+        }
 
         const dropZone = document.getElementById('view-files');
-        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-accent'); }); dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.classList.remove('border-accent'); });
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (sftpUploadActive) return;
+            dropZone.classList.add('border-orange-500', 'bg-orange-500/5');
+            const grid = document.getElementById('sftp-grid');
+            if (grid) grid.classList.add('pointer-events-none');
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-orange-500', 'bg-orange-500/5');
+            const grid = document.getElementById('sftp-grid');
+            if (grid && !sftpUploadActive) grid.classList.remove('pointer-events-none');
+        });
+
         dropZone.addEventListener('drop', (e) => {
-            e.preventDefault(); dropZone.classList.remove('border-accent'); const file = e.dataTransfer.files[0]; if (!file) return;
-            const remotePath = currentSftpPath + (currentSftpPath.endsWith('/') ? '' : '/') + file.name; socket.emit('sftp-upload-start', { remotePath });
-            const reader = new FileReader(); let offset = 0;
-            reader.onload = (e) => { socket.emit('sftp-upload-chunk', { remotePath, chunk: e.target.result }); offset += 65536; if (offset < file.size) readNextChunk(); else socket.emit('sftp-upload-end', { remotePath }); };
-            function readNextChunk() { reader.readAsArrayBuffer(file.slice(offset, offset + 65536)); } readNextChunk();
+            e.preventDefault();
+            dropZone.classList.remove('border-orange-500', 'bg-orange-500/5');
+            const grid = document.getElementById('sftp-grid');
+            if (grid && !sftpUploadActive) grid.classList.remove('pointer-events-none');
+            if (sftpUploadActive) { showToast('Upload currently active.', 'error'); return; }
+
+            const file = e.dataTransfer.files[0];
+            if (!file) return;
+
+            sftpLockUi();
+            const prog = document.getElementById('sftp-upload-progress');
+            const bar = document.getElementById('sftp-progress-bar');
+            const dot = document.getElementById('sftp-progress-dot');
+            const nameEl = document.getElementById('sftp-progress-filename');
+            const bytesEl = document.getElementById('sftp-progress-bytes');
+            const pctEl = document.getElementById('sftp-progress-pct');
+
+            if (prog) prog.classList.remove('hidden');
+            if (bar) { bar.style.width = '0%'; bar.classList.remove('bg-emerald-500'); bar.classList.add('bg-orange-500'); }
+            if (pctEl) { pctEl.textContent = '0%'; pctEl.classList.remove('text-emerald-400'); pctEl.classList.add('text-orange-400'); }
+            if (dot) { dot.classList.remove('bg-emerald-500'); dot.classList.add('bg-orange-500', 'animate-pulse'); }
+            if (nameEl) nameEl.textContent = file.name;
+            if (bytesEl) bytesEl.textContent = '0 B / ' + sftpFormatBytes(file.size);
+
+            const remotePath = currentSftpPath + (currentSftpPath.endsWith('/') ? '' : '/') + file.name;
+            socket.emit('sftp-upload-start', { remotePath });
+            const reader = new FileReader();
+            let offset = 0;
+            reader.onload = (ev) => {
+                socket.emit('sftp-upload-chunk', { remotePath, chunk: ev.target.result });
+                offset += 65536;
+                const curBytes = Math.min(offset, file.size);
+                const curPct = Math.min(100, Math.round((curBytes / file.size) * 100));
+                if (bar) bar.style.width = curPct + '%';
+                if (pctEl) pctEl.textContent = curPct + '%';
+                if (bytesEl) bytesEl.textContent = sftpFormatBytes(curBytes) + ' / ' + sftpFormatBytes(file.size);
+
+                if (offset < file.size) {
+                    readNextChunk();
+                } else {
+                    socket.emit('sftp-upload-end', { remotePath });
+                }
+            };
+            function readNextChunk() {
+                reader.readAsArrayBuffer(file.slice(offset, offset + 65536));
+            }
+            readNextChunk();
         });
     /* BASTIONCC_V198_SCRIPT_START */
 let _spCurContainerId = null;
@@ -2109,7 +2319,7 @@ window.submitContainerDeployment = async function() {
 };
 
 function _spStartSse(depId) {
-  _spEvtSource = new EventSource(`/api/docker/recreate/stream/${depId}`);
+  _spEvtSource = new EventSource(`/api/docker/recreate/stream/${depId}?token=${encodeURIComponent(typeof authToken !== "undefined" ? authToken : "")}`);
   _spEvtSource.onmessage = e => {
     const d = JSON.parse(e.data);
     _spHandleEvent(d);
@@ -2813,6 +3023,7 @@ window.ComposeManager = {
         this.setYaml("version: '3.8'\n");
       }
       document.getElementById('cd-env-raw').value = data.env || '';
+      this.syncRawToTableEnv();
       this.validateAll();
     } catch(e) {
       if (typeof showToast === 'function') showToast('Failed to load stack configuration: ' + e.message, 'error');
