@@ -1,10 +1,58 @@
 [
   {
-    "version": "v1.9.8.16",
+    "version": "v1.9.8.20",
+    "date": "September 2026",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
+    "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+    "title": "SFTP Orange Theme Modernization & SSE Security Scoping",
+    "changes": [
+      { "tag": "UI", "text": "Modernized SFTP file manager with orange-themed SVG icons for folders and files, replacing legacy emojis." },
+      { "tag": "FEATURE", "text": "Added real-time docked orange upload progress indicator driven by Socket.IO 64KB chunk streams." },
+      { "tag": "FEATURE", "text": "Introduced dynamic byte formatting (B, KB, MB, GB) across the SFTP grid and transfer stats." },
+      { "tag": "FEATURE", "text": "Added interactive path breadcrumbs for single-click ancestor directory jumps." },
+      { "tag": "UI", "text": "Implemented dropzone drag-and-drop highlight wash and transient download buffer feedback." },
+      { "tag": "SECURITY", "text": "Restricted query-parameter token authentication exclusively to authenticated SSE stream routes." }
+    ]
+  },
+  {
+    "version": "v1.9.8.18",
+    "date": "September 2026",
+    "badge": "STABLE",
+    "borderColor": "border-blue-500",
+    "title": "Docker API Auth Confinement & Dynamic Mount Translation",
+    "changes": [
+      {
+        "tag": "SECURITY",
+        "text": "Docker API Auth Confinement: Sealed all 12 container & Compose endpoints behind requireAuth JWT middleware to prevent unauthorized execution and privilege escalation"
+      },
+      {
+        "tag": "SECURITY",
+        "text": "SSE Stream Authentication: Added token query parameter fallback to requireAuth to secure /api/docker/recreate/stream without breaking standard browser EventSource handshakes"
+      },
+      {
+        "tag": "FIX",
+        "text": "Dynamic Manager Mount Translation: Automatically maps container-internal stack paths (Dockhand, Hawser, Portainer) to actual host volume storage paths"
+      },
+      {
+        "tag": "FIX",
+        "text": "Manager Mount Isolation: Restricted filesystem mount resolution to privileged containers mounting docker.sock to eliminate path collisions with unrelated containers"
+      },
+      {
+        "tag": "FIX",
+        "text": "Compose Label Parsing: Normalized config file label paths to prevent duplicate working directory concatenation on stack content reads"
+      }
+    ]
+  },
+  {
+    "version": "v1.9.8.16",
+    "borderColor": "border-slate-800",
     "title": "Full Docker Compose Management, Stack Teardown & Volume Safety",
     "changes": [
+      {
+        "tag": "SECURITY",
+        "text": "Docker API Auth Confinement: Sealed all 12 container & Compose endpoints behind requireAuth JWT middleware"
+      },
       {
         "tag": "FEATURE",
         "text": "Interactive Docker Compose editor with live YAML syntax linting, environment variable validation, and pre-flight schema checks prior to execution"
@@ -29,8 +77,7 @@
   },
   {
     "version": "v1.9.8.12",
-    "badge": "STABLE",
-    "borderColor": "border-slate-700",
+    "borderColor": "border-slate-800",
     "title": "Image Prune Engine & Action Controls",
     "changes": [
       {
