@@ -1404,9 +1404,30 @@ async function _bccDockerExec(ssh, cmd) {
   if (ssh && typeof _runSshCmd === 'function') {
     return await _runSshCmd(ssh, cmd).catch(() => '');
   }
-  const { exec } = require('child_process');
+  const { spawn } = require('child_process');
   return new Promise((resolve) => {
-    exec(cmd, { maxBuffer: 1024 * 1024 * 5 }, (err, stdout) => resolve(stdout || ''));
+    const shell = fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
+    const child = spawn(shell, ['-s'], {
+      env: {
+        ...process.env,
+        PATH: (process.env.PATH || '') + ':/usr/local/bin:/usr/bin:/bin:/snap/bin:~/.docker/cli-plugins'
+      }
+    });
+    let stdout = '';
+    child.stdout.on('data', (d) => {
+      if (stdout.length < 1024 * 1024 * 10) stdout += d.toString();
+    });
+    child.stderr.on('data', (d) => {
+      if (stdout.length < 1024 * 1024 * 10) stdout += d.toString();
+    });
+    child.on('error', () => resolve(''));
+    child.on('close', () => resolve(stdout || ''));
+    try {
+      child.stdin.write(cmd);
+      child.stdin.end();
+    } catch (_) {
+      resolve(stdout || '');
+    }
   });
 }
 
