@@ -1410,8 +1410,17 @@ async function _bccDockerExec(ssh, cmd) {
   });
 }
 
-// Enforce strict Master PIN JWT authentication across all Docker/Compose APIs
-app.use('/api/docker', requireAuth);
+// Rate limiter to mitigate DoS & resource exhaustion on Docker APIs
+const dockerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many Docker API requests, please try again later.' }
+});
+
+// Enforce rate limiting and strict Master PIN JWT authentication across all Docker/Compose APIs
+app.use('/api/docker', dockerLimiter, requireAuth);
 
 app.get('/api/docker/compose/discover', async (req, res) => {
   try {
@@ -1579,6 +1588,13 @@ app.get('/api/docker/compose/stack-content', async (req, res) => {
       return res.status(400).json({ error: 'Missing dir or file parameter.' });
     }
 
+    if (dir && !/^[a-zA-Z0-9_\-\.\/~]+$/.test(dir)) {
+      return res.status(400).json({ error: 'Invalid directory path format.' });
+    }
+    if (file && !/^[a-zA-Z0-9_\-\.]+$/.test(file)) {
+      return res.status(400).json({ error: 'Invalid file name format.' });
+    }
+
     const readScript = `
       WORKDIR=${_shQuote(dir)}
       CFGFILE=${_shQuote(file)}
@@ -1627,6 +1643,9 @@ app.post('/api/docker/compose/destroy', async (req, res) => {
 
     if (!projectName || !/^[a-zA-Z0-9_\-]+$/.test(projectName)) {
       return res.status(400).json({ error: 'Invalid project name' });
+    }
+    if (workingDir && !/^[a-zA-Z0-9_\-\.\/~]+$/.test(workingDir)) {
+      return res.status(400).json({ error: 'Invalid working directory path format.' });
     }
 
     const downFlags = deleteVolumes ? 'down -v --remove-orphans' : 'down --remove-orphans';
@@ -1682,6 +1701,10 @@ app.post('/api/docker/compose/deploy', async (req, res) => {
 
     const b64Yaml = Buffer.from(yamlContent, 'utf8').toString('base64');
     const b64Env = Buffer.from(envContent, 'utf8').toString('base64');
+
+    if (!/^[A-Za-z0-9+/=]*$/.test(b64Yaml) || !/^[A-Za-z0-9+/=]*$/.test(b64Env)) {
+      return res.status(400).json({ error: 'Invalid compose payload encoding.' });
+    }
 
     const testToken = 'bcc_chk_' + Math.random().toString(36).substring(2, 10);
     const tmpDir = `/tmp/${testToken}`;
