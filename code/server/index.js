@@ -81,7 +81,8 @@ const authLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 5, message: { succ
 
 function requireAuth(req, res, next) {
     const authHeader = req.headers.authorization || '';
-    const token = authHeader.split(' ')[1];
+    const isSseStream = req.path.startsWith('/api/docker/recreate/stream');
+    const token = (authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : '') || (isSseStream ? req.query.token : null);
     if (!token || !masterAuth) return res.status(401).json({ success: false, message: 'Unauthorized' });
     jwt.verify(token, masterAuth.jwtSecret, (err) => {
         if (err) return res.status(401).json({ success: false, message: 'Invalid session' });
@@ -1146,6 +1147,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
+            if (typeof sftpUnlockUi === 'function') sftpUnlockUi();
+            if (typeof activeDownloadToast !== 'undefined' && activeDownloadToast) { activeDownloadToast.remove(); activeDownloadToast = null; }
         if (statsInterval) clearInterval(statsInterval); if (dockerInterval) clearInterval(dockerInterval);
         if (sshClient) sshClient.end(); activeUploads.clear(); activePins.delete(socket.id);
     });
@@ -1407,12 +1410,40 @@ async function _bccDockerExec(ssh, cmd) {
   });
 }
 
+// Enforce strict Master PIN JWT authentication across all Docker/Compose APIs
+app.use('/api/docker', requireAuth);
+
 app.get('/api/docker/compose/discover', async (req, res) => {
   try {
     const ssh = typeof _resolveSsh === 'function' ? _resolveSsh() : null;
     const NL = String.fromCharCode(10);
     const stackMap = new Map();
     const envPrefix = 'export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin:~/.docker/cli-plugins; ';
+
+    // 0. Dynamic Container Mount Discovery (Restricted strictly to Docker Managers with docker.sock)
+    const mountCmd = envPrefix + 'CID=$(docker ps -q 2>/dev/null); [ -n "$CID" ] && docker inspect $CID --format \'{{$img := .Config.Image}}{{$name := .Name}}{{$hasSock := false}}{{range .Mounts}}{{if or (eq .Destination "/var/run/docker.sock") (eq .Destination "/run/docker.sock")}}{{$hasSock = true}}{{end}}{{end}}{{if $hasSock}}{{range .Mounts}}{{if and .Destination (ne .Destination "/var/run/docker.sock") (ne .Destination "/run/docker.sock")}}{{.Destination}}===BCC==={{.Source}}===BCC==={{$name}}{{"\\n"}}{{end}}{{end}}{{end}}\' 2>/dev/null || true';
+    const mountRaw = await _bccDockerExec(ssh, mountCmd);
+    const mountMappings = [];
+    mountRaw.split(NL).forEach(line => {
+      const parts = line.trim().split('===BCC===');
+      if (parts.length >= 2 && parts[0] && parts[1] && parts[0] !== parts[1]) {
+        mountMappings.push({ dest: parts[0].trim(), src: parts[1].trim() });
+      }
+    });
+    // Sort descending by destination length so deeper nested mounts match first
+    mountMappings.sort((a, b) => b.dest.length - a.dest.length);
+
+    const resolveHostPath = (p) => {
+      if (!p || typeof p !== 'string') return p;
+      const norm = p.trim();
+      for (const m of mountMappings) {
+        if (norm === m.dest) return m.src;
+        if (norm.startsWith(m.dest + '/')) {
+          return m.src + norm.substring(m.dest.length);
+        }
+      }
+      return norm;
+    };
 
     // 1. Docker Compose v2 Native LS
     const composeLsRaw = await _bccDockerExec(ssh, envPrefix + 'docker compose ls --all --format "{{.Name}}---BCC---{{.ConfigFiles}}---BCC---{{.Status}}" 2>/dev/null || true');
@@ -1423,19 +1454,20 @@ app.get('/api/docker/compose/discover', async (req, res) => {
       const status = (parts[2] || '').trim();
       if (!project) return;
 
-      const workingDir = configFiles.includes('/') ? configFiles.substring(0, configFiles.lastIndexOf('/')) : '';
-      const configFile = configFiles.includes('/') ? configFiles.substring(configFiles.lastIndexOf('/') + 1) : (configFiles || 'docker-compose.yml');
+      const rawCfg = configFiles.split(',')[0].trim();
+      let workingDir = rawCfg.includes('/') ? rawCfg.substring(0, rawCfg.lastIndexOf('/')) : '';
+      let configFile = rawCfg.includes('/') ? rawCfg.substring(rawCfg.lastIndexOf('/') + 1) : (rawCfg || 'docker-compose.yml');
 
       stackMap.set(project, {
         name: project,
-        workingDir: workingDir || `~/stacks/${project}`,
+        workingDir: resolveHostPath(workingDir) || `~/stacks/${project}`,
         configFile: configFile || 'docker-compose.yml',
         running: status.toLowerCase().includes('running') || status.toLowerCase().includes('up'),
         source: 'compose-ls'
       });
     });
 
-    // 2. Comprehensive Container Label Scan (Dockhand, Portainer, CLI Compose)
+    // 2. Comprehensive Container Label Scan (Dockhand, Dockge, Portainer, CLI Compose)
     const labelCmd = envPrefix + 'docker ps -a --format \'{{.Names}}---BCC---{{.Status}}---BCC---{{.Labels}}\' 2>/dev/null || true';
     const labelRaw = await _bccDockerExec(ssh, labelCmd);
     labelRaw.split(NL).forEach(line => {
@@ -1447,7 +1479,7 @@ app.get('/api/docker/compose/discover', async (req, res) => {
 
       let project = '';
       let workingDir = '';
-      let configFile = 'docker-compose.yml';
+      let configFile = '';
 
       labels.split(',').forEach(lbl => {
         const [k, ...vParts] = lbl.split('=');
@@ -1457,10 +1489,20 @@ app.get('/api/docker/compose/discover', async (req, res) => {
         if (k === 'com.docker.compose.project.config_files') configFile = v;
       });
 
+      if (configFile) {
+        const rawFirst = configFile.split(',')[0].trim();
+        if (rawFirst.includes('/')) {
+          if (!workingDir) workingDir = rawFirst.substring(0, rawFirst.lastIndexOf('/'));
+          configFile = rawFirst.substring(rawFirst.lastIndexOf('/') + 1);
+        } else {
+          configFile = rawFirst;
+        }
+      }
+
       if (project && !stackMap.has(project)) {
         stackMap.set(project, {
           name: project,
-          workingDir: workingDir || `~/stacks/${project}`,
+          workingDir: resolveHostPath(workingDir) || `~/stacks/${project}`,
           configFile: configFile || 'docker-compose.yml',
           running: status.toLowerCase().includes('up'),
           source: 'container-label'
@@ -2047,4 +2089,4 @@ app.post('/api/docker/recreate/:depId/decision', (req, res) => {
 });
 /* BASTIONCC_V198_BACKEND_END */
 
-server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8.16 Ready on port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8.20 Ready on port ${PORT}`));
