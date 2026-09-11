@@ -1,25 +1,63 @@
 [
   {
-    "version": "v1.9.8.20",
+    "version": "v1.9.8.22",
     "date": "September 2026",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
     "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+    "title": "Full-Window SFTP Drop Shield & Silent Container Exec Probe",
+    "changes": [
+      {
+        "tag": "UI / UX",
+        "text": "Full-Window SFTP Drop Shield: Integrated an active drop overlay with drag event counter and global window shield, eliminating element flickering and preventing accidental browser file navigation."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Silent Container Shell Pre-Flight: Implemented backend probe (/api/docker/containers/:id/probe-shell) with strict identifier sanitization and shell allowlisting, eliminating OCI shell execution errors in interactive terminals."
+      },
+      {
+        "tag": "CORE",
+        "text": "Version Bump & System Telemetry Sync: Synchronized application metadata, package schemas, and build telemetry to v1.9.8.22."
+      }
+    ]
+  },
+  {
+    "version": "v1.9.8.20",
+    "date": "September 2026",
+    "badge": "STABLE",
+    "borderColor": "border-blue-500",
     "title": "SFTP Orange Theme Modernization & SSE Security Scoping",
     "changes": [
-      { "tag": "UI", "text": "Modernized SFTP file manager with orange-themed SVG icons for folders and files, replacing legacy emojis." },
-      { "tag": "FEATURE", "text": "Added real-time docked orange upload progress indicator driven by Socket.IO 64KB chunk streams." },
-      { "tag": "FEATURE", "text": "Introduced dynamic byte formatting (B, KB, MB, GB) across the SFTP grid and transfer stats." },
-      { "tag": "FEATURE", "text": "Added interactive path breadcrumbs for single-click ancestor directory jumps." },
-      { "tag": "UI", "text": "Implemented dropzone drag-and-drop highlight wash and transient download buffer feedback." },
-      { "tag": "SECURITY", "text": "Restricted query-parameter token authentication exclusively to authenticated SSE stream routes." }
+      {
+        "tag": "UI",
+        "text": "Modernized SFTP file manager with orange-themed SVG icons for folders and files, replacing legacy emojis."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Added real-time docked orange upload progress indicator driven by Socket.IO 64KB chunk streams."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Introduced dynamic byte formatting (B, KB, MB, GB) across the SFTP grid and transfer stats."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Added interactive path breadcrumbs for single-click ancestor directory jumps."
+      },
+      {
+        "tag": "UI",
+        "text": "Implemented dropzone drag-and-drop highlight wash and transient download buffer feedback."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Restricted query-parameter token authentication exclusively to authenticated SSE stream routes."
+      }
     ]
   },
   {
     "version": "v1.9.8.18",
     "date": "September 2026",
-    "badge": "STABLE",
-    "borderColor": "border-blue-500",
+    "borderColor": "border-slate-800",
     "title": "Docker API Auth Confinement & Dynamic Mount Translation",
     "changes": [
       {
