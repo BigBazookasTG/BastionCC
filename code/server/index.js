@@ -1921,6 +1921,26 @@ app.post('/api/docker/images/prune', async (req, res) => {
   }
 });
 
+// Silent Pre-Flight Probe to detect container shell without OCI terminal stderr errors
+app.get('/api/docker/containers/:id/probe-shell', async (req, res) => {
+  try {
+    const containerId = String(req.params.id || '').replace(/^\//, '').trim();
+    if (!_isValidContainerId(containerId)) {
+      return res.status(400).json({ error: 'Invalid container identifier format.' });
+    }
+    const ssh = typeof _resolveSsh === 'function' ? _resolveSsh() : null;
+    const safeShells = ['/bin/bash', '/usr/bin/bash', '/bin/ash', '/usr/bin/ash', '/bin/sh'];
+    const cleanId = typeof _shQuote === 'function' ? _shQuote(containerId) : ("'" + containerId.replace(/'/g, "'\\''") + "'");
+    const probeCmd = 'docker exec ' + cleanId + ' sh -c ' + (typeof _shQuote === 'function' ? _shQuote('command -v bash || command -v ash || echo /bin/sh') : "'command -v bash || command -v ash || echo /bin/sh'") + ' 2>/dev/null';
+    const rawOutput = await _bccDockerExec(ssh, probeCmd);
+    const detected = String(rawOutput || '').trim().split('\n')[0].trim();
+    const shell = safeShells.includes(detected) ? detected : '/bin/sh';
+    res.json({ shell });
+  } catch (err) {
+    res.json({ shell: '/bin/sh' });
+  }
+});
+
 app.get('/api/docker/containers/:id/edit-config', async (req, res) => {
   try {
     const containerId = String(req.params.id).replace(/^\//, '').trim();
@@ -2133,4 +2153,4 @@ app.post('/api/docker/recreate/:depId/decision', (req, res) => {
 });
 /* BASTIONCC_V198_BACKEND_END */
 
-server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8.20 Ready on port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8.22 Ready on port ${PORT}`));
