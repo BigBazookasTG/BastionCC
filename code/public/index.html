@@ -519,7 +519,7 @@
             <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
             <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
                 <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
-                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8.20 Changelog</span></div>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8.22 Changelog</span></div>
             </div>
         </div>
     </nav>
@@ -574,6 +574,16 @@
             <div id="view-terminal" class="absolute inset-0 p-2 hidden"></div>
             
             <div id="view-files" class="absolute inset-0 bg-white dark:bg-darkNav p-4 hidden flex-col border-4 border-transparent">
+                <!-- SFTP Full-Window Drop Shield Overlay -->
+                <div id="sftp-drop-overlay" class="hidden absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/85 backdrop-blur-sm border-4 border-dashed border-orange-500 rounded-xl transition-all duration-150">
+                  <div class="pointer-events-none flex flex-col items-center gap-3 text-center">
+                    <svg class="w-16 h-16 text-orange-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    </svg>
+                    <h3 class="text-xl font-bold text-white tracking-wide">Drop files here to upload</h3>
+                    <p class="text-sm text-slate-300">Files will upload directly to current directory</p>
+                  </div>
+                </div>
                 <div class="text-sm border-b border-slate-200 dark:border-slate-800 pb-2 mb-2 flex space-x-2"><button id="btn-sftp-up" class="px-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition rounded font-semibold text-xs">UP</button><span id="sftp-path" class="font-mono text-slate-500 py-1">/root</span></div>
                 <div id="sftp-grid" class="flex-1 overflow-y-auto transition-opacity duration-200"></div>
                 <!-- SFTP Upload Progress Bar (Docked Bottom Strip) -->
@@ -743,7 +753,7 @@
 
                 <div class="bg-[#1e1e1e] rounded-lg p-4 border border-slate-700 flex-1 overflow-y-auto shadow-inner min-h-[200px]">
                     <div id="securityTerm" class="font-mono text-sm text-sky-400 whitespace-pre">
-                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9.8.20</p>
+                        <p class="text-slate-500">BastionCC Security Audit Engine v1.9.8.22</p>
                         <p class="text-slate-500">Ready for target acquisition...</p>
                         <p class="text-accent mt-2">> _</p>
                     </div>
@@ -1771,7 +1781,23 @@
         function viewLogs(c) { document.getElementById('diag-title').innerText = `Logs: ${maskDemoText(c)}`; document.getElementById('diagnostics-modal').classList.remove('hidden'); modalTerm.clear(); setTimeout(() => { try { modalFitAddon.fit(); } catch(e){} }, 150); socket.emit('docker-logs', { container: c }); }
         function scanDocker(i) { document.getElementById('diag-title').innerText = `Grype Scan: ${maskDemoText(i)}`; document.getElementById('diagnostics-modal').classList.remove('hidden'); modalTerm.clear(); setTimeout(() => { try { modalFitAddon.fit(); } catch(e){} }, 150); socket.emit('docker-scan', { image: i }); }
         function closeDiagnostics() { document.getElementById('diagnostics-modal').classList.add('hidden'); }
-        function execDocker(c) { switchTab('terminal'); socket.emit('terminal-input', `docker exec -it ${c} /bin/bash || docker exec -it ${c} /bin/sh\r`); term.focus(); }
+        async function execDocker(c) {
+            switchTab('terminal');
+            term.focus();
+            let shell = '/bin/sh';
+            try {
+                const headers = {};
+                if (typeof authToken !== 'undefined' && authToken) headers['Authorization'] = 'Bearer ' + authToken;
+                const res = await fetch('/api/docker/containers/' + encodeURIComponent(c) + '/probe-shell', { headers });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.shell) shell = data.shell;
+                }
+            } catch (err) {
+                console.warn('Probe shell fallback to /bin/sh:', err);
+            }
+            socket.emit('terminal-input', 'docker exec -it ' + c + ' ' + shell + '\r');
+        }
 
         function switchTab(tab) {
             const _cab = document.getElementById('container-actions-bar'); if (_cab) { _cab.classList.add('hidden'); _cab.classList.remove('flex'); }
@@ -2039,31 +2065,14 @@
             socket.emit('sftp-download', currentSftpPath + sep + filename);
         }
 
-        const dropZone = document.getElementById('view-files');
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            if (sftpUploadActive) return;
-            dropZone.classList.add('border-orange-500', 'bg-orange-500/5');
-            const grid = document.getElementById('sftp-grid');
-            if (grid) grid.classList.add('pointer-events-none');
+        // Global Navigation Shield: prevent browser from navigating to dropped files anywhere
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((evt) => {
+            window.addEventListener(evt, (e) => e.preventDefault(), false);
         });
 
-        dropZone.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('border-orange-500', 'bg-orange-500/5');
-            const grid = document.getElementById('sftp-grid');
-            if (grid && !sftpUploadActive) grid.classList.remove('pointer-events-none');
-        });
-
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('border-orange-500', 'bg-orange-500/5');
-            const grid = document.getElementById('sftp-grid');
-            if (grid && !sftpUploadActive) grid.classList.remove('pointer-events-none');
-            if (sftpUploadActive) { showToast('Upload currently active.', 'error'); return; }
-
-            const file = e.dataTransfer.files[0];
+        function sftpUploadFile(file) {
             if (!file) return;
+            if (sftpUploadActive) { showToast('Upload currently active.', 'error'); return; }
 
             sftpLockUi();
             const prog = document.getElementById('sftp-upload-progress');
@@ -2103,6 +2112,58 @@
                 reader.readAsArrayBuffer(file.slice(offset, offset + 65536));
             }
             readNextChunk();
+        }
+
+        let sftpDragDepth = 0;
+        function isSftpActive() {
+            const el = document.getElementById('view-files');
+            return el && !el.classList.contains('hidden');
+        }
+
+        window.addEventListener('dragenter', (e) => {
+            if (!isSftpActive()) return;
+            if (e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+                sftpDragDepth++;
+                const overlay = document.getElementById('sftp-drop-overlay');
+                if (overlay) overlay.classList.remove('hidden');
+            }
+        });
+
+        window.addEventListener('dragleave', (e) => {
+            if (!isSftpActive()) return;
+            sftpDragDepth--;
+            if (sftpDragDepth <= 0) {
+                sftpDragDepth = 0;
+                const overlay = document.getElementById('sftp-drop-overlay');
+                if (overlay) overlay.classList.add('hidden');
+            }
+        });
+
+        window.addEventListener('dragover', (e) => {
+            if (!isSftpActive()) return;
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        });
+
+        window.addEventListener('drop', (e) => {
+            if (!isSftpActive()) return;
+            e.preventDefault();
+            sftpDragDepth = 0;
+            const overlay = document.getElementById('sftp-drop-overlay');
+            if (overlay) overlay.classList.add('hidden');
+
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0) {
+                sftpUploadFile(files[0]);
+            }
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                sftpDragDepth = 0;
+                const overlay = document.getElementById('sftp-drop-overlay');
+                if (overlay) overlay.classList.add('hidden');
+            }
         });
     /* BASTIONCC_V198_SCRIPT_START */
 let _spCurContainerId = null;
