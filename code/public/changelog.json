@@ -1,10 +1,31 @@
 [
   {
-    "version": "v1.9.8.22",
+    "version": "v1.9.8.24",
     "date": "September 2026",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
     "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+    "title": "SSE Mount-Path Normalization & Source Pipeline Decoupling",
+    "changes": [
+      {
+        "tag": "BUG FIX",
+        "text": "Docker Recreate Stream Resolution: Resolved Express mount-point stripping in requireAuth by inspecting req.originalUrl alongside req.path. Fixed 401 Unauthorized rejections on query-token EventSource streams during container update workflows."
+      },
+      {
+        "tag": "CORE",
+        "text": "Source Pipeline Decoupling: Fully transitioned maintenance from monolithic shell-heredoc generators to direct source file editing, eliminating regex drift and double-hop build regressions."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Telemetry & Footer Sync: Updated global application telemetry, runtime metadata, and public footer badges to v1.9.8.24."
+      }
+    ]
+  },
+  {
+    "version": "v1.9.8.22",
+    "date": "September 2026",
+    "badge": "STABLE",
+    "borderColor": "border-blue-500",
     "title": "Full-Window SFTP Drop Shield & Silent Container Exec Probe",
     "changes": [
       {
@@ -24,8 +45,7 @@
   {
     "version": "v1.9.8.20",
     "date": "September 2026",
-    "badge": "STABLE",
-    "borderColor": "border-blue-500",
+    "borderColor": "border-slate-800",
     "title": "SFTP Orange Theme Modernization & SSE Security Scoping",
     "changes": [
       {
