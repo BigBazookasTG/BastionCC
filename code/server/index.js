@@ -81,7 +81,7 @@ const authLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 5, message: { succ
 
 function requireAuth(req, res, next) {
     const authHeader = req.headers.authorization || '';
-    const isSseStream = req.path.startsWith('/api/docker/recreate/stream');
+    const isSseStream = (req.originalUrl || req.url || '').startsWith('/api/docker/recreate/stream') || req.path.startsWith('/recreate/stream');
     const token = (authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : '') || (isSseStream ? req.query.token : null);
     if (!token || !masterAuth) return res.status(401).json({ success: false, message: 'Unauthorized' });
     jwt.verify(token, masterAuth.jwtSecret, (err) => {
