@@ -1,9 +1,39 @@
 [
   {
-    "version": "v1.9.8.24",
-    "date": "September 2026",
+    "version": "v1.9.8.26",
+    "date": "October 2026",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
+    "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+    "title": "Standardized Stack Root, Compose Pre-Flight & PTY Viewport Sync",
+    "changes": [
+      {
+        "tag": "CORE",
+        "text": "Standardized Stack Root: Standardized default deployment path to /opt/bastion/stacks with root:docker ownership and 2775 SGID permission provisioning."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Import external stacks which were created in alternate paths on the server (usefull if stacks were previously created in Dockhand / Portainer for example."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Compose Pre-Flight & Error Trapping: Added pre-deployment validation for external volumes and bind-mount paths, and strictly trapped non-zero exit codes to eliminate false-positive deployment toasts."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Multi-Engine Stack Crawler: Expanded filesystem discovery across Portainer, Dockhand, Dockge, and standard Docker locations with instant selector cache invalidation."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "xterm.js Responsive Geometry: Integrated ResizeObserver to eliminate terminal viewport bottom-line clipping and ghost redraw artifacts."
+      }
+    ]
+  },
+  {
+    "version": "v1.9.8.24",
+    "date": "September 2026",
+    "badge": "STABLE",
+    "borderColor": "border-blue-500",
     "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
     "title": "SSE Mount-Path Normalization & Source Pipeline Decoupling",
     "changes": [
@@ -24,8 +54,7 @@
   {
     "version": "v1.9.8.22",
     "date": "September 2026",
-    "badge": "STABLE",
-    "borderColor": "border-blue-500",
+    "borderColor": "border-slate-800",
     "title": "Full-Window SFTP Drop Shield & Silent Container Exec Probe",
     "changes": [
       {
