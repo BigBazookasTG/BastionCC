@@ -71,7 +71,7 @@ Save the docker-compose.yml file to your preferred location. Double check the fi
 Docker Compose up
 visit localhost:3000 or 127.0.0.1:3000
 ~~~
-**Or download the latest Appimage**
+**Or download the latest installer for your OS**
 
 ## Security Approach
 
