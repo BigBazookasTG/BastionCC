@@ -1431,6 +1431,29 @@ async function _bccDockerExec(ssh, cmd) {
   });
 }
 
+/**
+ * Ensures the standard stack root directory exists on the target node
+ * with root:docker ownership, mode 2775, and SGID bit set.
+ *
+ * @param {object} ssh - Active SSH connection instance
+ * @param {string} [customRoot] - Target root path (default: /opt/bastion/stacks)
+ * @returns {Promise<string>} Resolved directory path
+ */
+async function _ensureStacksRoot(ssh, customRoot = '/opt/bastion/stacks') {
+  const rootDir = (customRoot && typeof customRoot === 'string') ? customRoot.trim() : '/opt/bastion/stacks';
+  
+  // Use POSIX single-quote encapsulation to prevent command injection
+  const qDir = _shQuote(rootDir);
+  const initCmd = [
+    `sudo -n mkdir -p ${qDir}`,
+    `sudo -n chown root:docker ${qDir} 2>/dev/null || sudo -n chown :docker ${qDir} 2>/dev/null || true`,
+    `sudo -n chmod 2775 ${qDir} 2>/dev/null || true`
+  ].join(' && ');
+
+  await _bccDockerExec(ssh, initCmd);
+  return rootDir;
+}
+
 // Rate limiter to mitigate DoS & resource exhaustion on Docker APIs
 const dockerLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -1540,8 +1563,8 @@ app.get('/api/docker/compose/discover', async (req, res) => {
       }
     });
 
-    // 3. Deep Filesystem Crawl (/opt, /srv, /data, $HOME, /var/lib/dockhand)
-    const findCmd = envPrefix + 'find /opt /srv /data "$HOME" /var/lib/dockhand -maxdepth 5 -type f \\( -name "docker-compose.yml" -o -name "compose.yaml" -o -name "compose.yml" \\) 2>/dev/null | head -n 45 || true';
+// 3. Deep Filesystem Crawl (/opt/bastion/stacks, /var/lib/docker/stacks, /opt/stacks, /var/lib/dockhand, /opt/dockhand, /var/lib/docker/volumes/portainer_data/_data/compose, /opt, /srv, /data, $HOME)
+    const findCmd = envPrefix + 'find /opt/bastion/stacks /var/lib/docker/stacks /opt/stacks /var/lib/dockhand /opt/dockhand /var/lib/docker/volumes/portainer_data/_data/compose /opt /srv /data "$HOME" -maxdepth 5 -type f \\( -name "docker-compose.yml" -o -name "docker-compose.yaml" -o -name "compose.yaml" -o -name "compose.yml" \\) 2>/dev/null | head -n 80 || true';
     const findRaw = await _bccDockerExec(ssh, findCmd);
     findRaw.split(NL).forEach(filePath => {
       const fPath = filePath.trim();
@@ -1550,7 +1573,18 @@ app.get('/api/docker/compose/discover', async (req, res) => {
       const filename = fPath.substring(fPath.lastIndexOf('/') + 1);
       const inferredName = dir.substring(dir.lastIndexOf('/') + 1) || 'stack';
 
-      if (!stackMap.has(inferredName)) {
+      const isBastionRoot = dir.startsWith('/opt/bastion/stacks');
+      
+      // If it's in /opt/bastion/stacks, ALWAYS prioritize it over external/stale container labels
+      if (isBastionRoot && stackMap.has(inferredName)) {
+        const existing = stackMap.get(inferredName);
+        stackMap.set(inferredName, {
+          ...existing,
+          workingDir: dir,
+          configFile: filename,
+          source: 'bastion-native'
+        });
+      } else if (!stackMap.has(inferredName)) {
         stackMap.set(inferredName, {
           name: inferredName,
           workingDir: dir,
@@ -1701,6 +1735,88 @@ app.post('/api/docker/compose/destroy', async (req, res) => {
   }
 });
 
+/**
+ * Pre-flight validator for Compose external volumes.
+ * Ensures referenced external volumes actually exist on the target Docker host
+ * and detects accidental raw host file paths.
+ *
+ * @param {object} ssh - Active SSH client instance
+ * @param {string} yamlContent - Raw compose YAML string
+ * @returns {Promise<{valid: boolean, error?: string}>}
+ */
+async function _validateExternalVolumes(ssh, yamlContent) {
+  if (!yamlContent || typeof yamlContent !== 'string') return { valid: true };
+
+  // 1. Detect if an absolute path was declared under top-level volumes
+  const rawPathVolMatch = yamlContent.match(/^volumes:\s*\n(?:[ \t]+[^\n]+\n)*?[ \t]+(["']?\/[a-zA-Z0-9_\-./]+["']?)\s*:/m);
+  if (rawPathVolMatch) {
+    return {
+      valid: false,
+      error: `Invalid volume definition: "${rawPathVolMatch[1]}". Top-level volumes cannot be host paths. Use service bind mounts under "volumes:" (e.g. - "/host/path:/container/path") instead.`
+    };
+  }
+
+  // 2. Extract external volume declarations
+  // Matches volume blocks under top-level 'volumes:' with 'external: true' or 'external: ...'
+  const extVolumeNames = [];
+  const volSectionMatch = yamlContent.match(/^volumes:\s*\n((?:[ \t]+[^\n]*\n?)*)/m);
+  if (volSectionMatch && volSectionMatch[1]) {
+    const volLines = volSectionMatch[1].split('\n');
+    let currentVol = null;
+    let isExternal = false;
+    let explicitName = null;
+
+    for (const rawLine of volLines) {
+      const line = rawLine.replace(/\r$/, '');
+      const topIndentMatch = line.match(/^  ([a-zA-Z0-9_\-]+)\s*:/);
+      if (topIndentMatch) {
+        if (currentVol && isExternal) {
+          extVolumeNames.push(explicitName || currentVol);
+        }
+        currentVol = topIndentMatch[1];
+        isExternal = false;
+        explicitName = null;
+        continue;
+      }
+
+      if (currentVol) {
+        if (/^[ \t]+external\s*:\s*true/i.test(line)) {
+          isExternal = true;
+        }
+        const nameMatch = line.match(/^[ \t]+name\s*:\s*["']?([a-zA-Z0-9_\-]+)["']?/i);
+        if (nameMatch) {
+          explicitName = nameMatch[1];
+        }
+      }
+    }
+
+    if (currentVol && isExternal) {
+      extVolumeNames.push(explicitName || currentVol);
+    }
+  }
+
+  // 3. Inspect each external volume on the host Docker daemon
+  for (const volName of extVolumeNames) {
+    if (!_isValidContainerId(volName)) {
+      return { valid: false, error: `Invalid volume identifier format: "${volName}".` };
+    }
+
+    const checkCmd = `docker volume inspect ${_shQuote(volName)} >/dev/null 2>&1`;
+    const checkResult = await _bccDockerExec(ssh, `${checkCmd}; echo "___VOLCHK___:$?"`);
+    const statusMatch = checkResult.match(/___VOLCHK___:(\d+)/);
+    const exitCode = statusMatch ? parseInt(statusMatch[1], 10) : 1;
+
+    if (exitCode !== 0) {
+      return {
+        valid: false,
+        error: `External volume "${volName}" not found on target host. Please create it first (docker volume create ${volName}) or remove external: true.`
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
 app.post('/api/docker/compose/deploy', async (req, res) => {
   try {
     const ssh = typeof _resolveSsh === 'function' ? _resolveSsh() : null;
@@ -1714,7 +1830,8 @@ app.post('/api/docker/compose/deploy', async (req, res) => {
     }
 
     if (!workingDir) {
-      workingDir = `~/stacks/${projectName}`;
+      await _ensureStacksRoot(ssh, '/opt/bastion/stacks');
+      workingDir = `/opt/bastion/stacks/${projectName}`;
     }
     if (!/^[a-zA-Z0-9_\-\.\/~]+$/.test(workingDir)) {
       return res.status(400).json({ error: 'Invalid working directory path.' });
@@ -1731,12 +1848,12 @@ app.post('/api/docker/compose/deploy', async (req, res) => {
     const tmpDir = `/tmp/${testToken}`;
 
     // 1. Stage files in temporary directory on the host
-    const stageCmd = `mkdir -p ${tmpDir} && echo "${b64Yaml}" | base64 -d > ${tmpDir}/docker-compose.yml && echo "${b64Env}" | base64 -d > ${tmpDir}/.env`;
+    const stageCmd = `mkdir -p ${_shQuote(tmpDir)} && echo "${b64Yaml}" | base64 -d > ${_shQuote(tmpDir + '/docker-compose.yml')} && echo "${b64Env}" | base64 -d > ${_shQuote(tmpDir + '/.env')}`;
     await _bccDockerExec(ssh, stageCmd);
 
     // 2. Validate YAML schema with docker compose config
     const validateCmd = `export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin:~/.docker/cli-plugins"
-cd ${tmpDir}
+cd ${_shQuote(tmpDir)}
 if docker compose version >/dev/null 2>&1; then
   docker compose -p ${_shQuote(projectName)} config 2>&1
   echo "___STATUS___:$?"
@@ -1752,9 +1869,9 @@ fi
     const validateResult = await _bccDockerExec(ssh, validateCmd);
 
     // 3. Remove temporary testing files
-    await _bccDockerExec(ssh, `rm -rf ${tmpDir}`);
+    await _bccDockerExec(ssh, `rm -rf ${_shQuote(tmpDir)}`);
 
-    // 4. Inspect result
+    // 4. Inspect validation result
     const statusMatch = validateResult.match(/___STATUS___:(\d+)/);
     const exitCode = statusMatch ? parseInt(statusMatch[1], 10) : 1;
     const cleanOutput = validateResult.replace(/___STATUS___:\d+/, '').trim();
@@ -1767,21 +1884,92 @@ fi
       });
     }
 
-    // 5. Pre-flight passed: Deploy stack
+    // 5. Pre-flight passed: Ensure target working directory & deploy stack
     const deployCmd = `export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin:~/.docker/cli-plugins"
-mkdir -p ${workingDir}
-echo "${b64Yaml}" | base64 -d > ${workingDir}/docker-compose.yml
-echo "${b64Env}" | base64 -d > ${workingDir}/.env
-cd ${workingDir}
+mkdir -p ${_shQuote(workingDir)}
+echo "${b64Yaml}" | base64 -d > ${_shQuote(workingDir + '/docker-compose.yml')}
+echo "${b64Env}" | base64 -d > ${_shQuote(workingDir + '/.env')}
+cd ${_shQuote(workingDir)}
 if docker compose version >/dev/null 2>&1; then
-  docker compose -p ${_shQuote(projectName)} up -d 2>&1
+  docker compose -p ${_shQuote(projectName)} --project-directory ${_shQuote(workingDir)} up -d 2>&1
 else
-  docker-compose -p ${_shQuote(projectName)} up -d 2>&1
+  docker-compose -p ${_shQuote(projectName)} --project-directory ${_shQuote(workingDir)} up -d 2>&1
 fi
 `;
 
     const deployOutput = await _bccDockerExec(ssh, deployCmd);
     res.json({ success: true, output: deployOutput, workingDir });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/docker/compose/import', async (req, res) => {
+  try {
+    const ssh = typeof _resolveSsh === 'function' ? _resolveSsh() : null;
+    let sourcePath = String(req.body.sourcePath || '').trim();
+    let targetName = String(req.body.targetName || '').trim();
+
+    if (!sourcePath) {
+      return res.status(400).json({ error: 'Source directory path is required.' });
+    }
+
+    // Sanitize source path: prohibit shell metacharacters and trailing slashes
+    sourcePath = sourcePath.replace(/\/+$/, '');
+    if (!/^[a-zA-Z0-9_\-\.\/~]+$/.test(sourcePath)) {
+      return res.status(400).json({ error: 'Invalid source path format.' });
+    }
+
+    // Default target name to source leaf folder if omitted
+    if (!targetName) {
+      targetName = sourcePath.split('/').filter(Boolean).pop() || 'imported-stack';
+    }
+    if (!/^[a-zA-Z0-9_\-]+$/.test(targetName)) {
+      return res.status(400).json({ error: 'Invalid stack name. Use alphanumeric characters, dashes, or underscores.' });
+    }
+
+    // 1. Verify source directory exists on host
+    const checkSourceCmd = `[ -d ${_shQuote(sourcePath)} ] && echo "OK" || echo "NOT_FOUND"`;
+    const sourceCheck = (await _bccDockerExec(ssh, checkSourceCmd)).trim();
+    if (!sourceCheck.includes('OK')) {
+      return res.status(404).json({ error: `Source directory does not exist on host: ${sourcePath}` });
+    }
+
+    // 2. Ensure target /opt/bastion/stacks/<targetName> directory
+    const targetDir = `/opt/bastion/stacks/${targetName}`;
+    await _ensureStacksRoot(ssh, '/opt/bastion/stacks');
+    const initTargetCmd = [
+      `sudo -n mkdir -p ${_shQuote(targetDir)}`,
+      `sudo -n chown root:docker ${_shQuote(targetDir)} 2>/dev/null || sudo -n chown :docker ${_shQuote(targetDir)} 2>/dev/null || true`,
+      `sudo -n chmod 2775 ${_shQuote(targetDir)} 2>/dev/null || true`
+    ].join(' && ');
+    await _bccDockerExec(ssh, initTargetCmd);
+
+    // 3. Copy contents recursively (-n: no-clobber prevents accidental overwrites)
+    const copyCmd = `sudo -n cp -rn ${_shQuote(sourcePath)}/. ${_shQuote(targetDir)}/ 2>&1; echo "___CP_STATUS___:$?"`;
+    const copyRaw = await _bccDockerExec(ssh, copyCmd);
+    const cpMatch = copyRaw.match(/___CP_STATUS___:(\d+)/);
+    const cpCode = cpMatch ? parseInt(cpMatch[1], 10) : 1;
+
+    if (cpCode !== 0) {
+      const errOut = copyRaw.replace(/___CP_STATUS___:\d+/, '').trim();
+      return res.status(500).json({ error: `Failed to copy stack files: ${errOut}` });
+    }
+
+    // 4. Ensure copied files inherit docker group readability
+    await _bccDockerExec(ssh, `sudo -n chown -R :docker ${_shQuote(targetDir)} 2>/dev/null; sudo -n chmod -R g+rX ${_shQuote(targetDir)} 2>/dev/null || true`);
+
+    // 5. Inspect target to locate compose file
+    const detectCmd = `ls -1 ${_shQuote(targetDir)} 2>/dev/null | grep -E '^(docker-compose\\.ya?ml|compose\\.ya?ml)$' | head -n 1`;
+    const foundFile = (await _bccDockerExec(ssh, detectCmd)).trim() || 'docker-compose.yml';
+
+    res.json({
+      success: true,
+      stackName: targetName,
+      workingDir: targetDir,
+      configFile: foundFile,
+      message: `Stack successfully imported into ${targetDir}`
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2153,4 +2341,5 @@ app.post('/api/docker/recreate/:depId/decision', (req, res) => {
 });
 /* BASTIONCC_V198_BACKEND_END */
 
-server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v1.9.8.22 Ready on port ${PORT}`));
+const { version } = require('../package.json');
+server.listen(PORT, '0.0.0.0', () => console.log(`BastionCC v${version} Ready on port ${PORT}`));
