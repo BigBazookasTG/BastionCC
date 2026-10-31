@@ -1,6 +1,7 @@
 
 ![picture](/images/BastionCCsmall.png)
 
+#Version .26 and above contain the node cve patches.
 
 ## If you do not like AI assisted code then please pass on by, we get it you don't think it's real code just like how my dad stated digital photography is not real photography and look how that turned out (;o)
 
