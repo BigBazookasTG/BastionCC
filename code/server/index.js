@@ -2202,9 +2202,17 @@ async function fetchRegistryTags(ssh, rawImage, currentTag = '', options = {}) {
     ? new RegExp(`(${excludedPatterns.join('|')})`, 'i')
     : null;
 
-  // Flavor suffix matching (e.g. -alpine, -slim)
-  const flavorMatch = currentTag.match(/-(alpine.*|slim.*|bullseye.*|bookworm.*|debian.*|ubuntu.*)$/i);
-  const targetFlavor = flavorMatch ? flavorMatch[1].toLowerCase() : null;
+// Flavor suffix matching (e.g. -alpine, -slim) without regex backtracking
+  const KNOWN_FLAVORS = ['alpine', 'slim', 'bullseye', 'bookworm', 'debian', 'ubuntu'];
+  const lastHyphenIndex = currentTag.lastIndexOf('-');
+  let targetFlavor = null;
+
+  if (lastHyphenIndex !== -1) {
+    const candidateSuffix = currentTag.slice(lastHyphenIndex + 1).toLowerCase();
+    if (KNOWN_FLAVORS.some(flavor => candidateSuffix.startsWith(flavor))) {
+      targetFlavor = candidateSuffix;
+    }
+  }
 
   const validCandidates = tags.filter(tag => {
     if (tag === currentTag) return false;
@@ -2213,7 +2221,8 @@ async function fetchRegistryTags(ssh, rawImage, currentTag = '', options = {}) {
     if (targetFlavor) {
       return tag.toLowerCase().endsWith(`-${targetFlavor}`);
     } else {
-      return !/-(alpine|slim|bullseye|bookworm|debian|ubuntu)/i.test(tag);
+      const tagLower = tag.toLowerCase();
+      return !KNOWN_FLAVORS.some(flavor => tagLower.includes(`-${flavor}`));
     }
   });
 
