@@ -33,7 +33,7 @@
   ~~~
   From V1.9.8.32:
      - Check for Updated images
-     - Check GCHR/Docker.io & Private repors
+     - Check GCHR/Docker.io & Private repos
      - Click on tag to auto update tag field & Click update to confirm
    ~~~
   
