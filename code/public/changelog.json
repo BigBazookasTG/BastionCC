@@ -1,9 +1,51 @@
 [
   {
-    "version": "v1.9.8.26",
+    "version": "v1.9.8.32",
     "date": "October 2026",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
+    "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+    "title": "On-Demand Registry Tag Inspector & Path-Traversal Hardening",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "In-Modal Docker Tag Inspector / Updater: In-modal upstream tag discovery supporting Docker Hub and GHCR directly within container edit views."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Authenticated Private Registry Support: Automated, zero-exposure discovery of host-level Docker credentials (~/.docker/config.json) over active SSH sessions."
+      },
+      {
+        "tag": "CORE",
+        "text": "Smart Release Filter: UI toggles for Beta / RC and Dev / Nightly channels with automatic active-tag channel preselection."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Path Traversal & ReDoS Defense: Replaced polynomial trailing-slash regex on stack import routes with non-regex slicing, POSIX normalization, metacharacter bans, and strict boundary checks."
+      },
+      {
+        "tag": "CORE",
+        "text": "Version Bump & Pipeline Sync: Synchronized telemetry, package schemas, and build pipelines to v1.9.8.32."
+      },
+      {
+        "tag": "FIXED",
+        "text": "Docker Hub Major Version Truncation: Resolved legacy tag pagination traps using targeted major-version prefix filtering (&name=X.) and push-date ordering (tag_last_pushed)."
+      },
+      {
+        "tag": "FIXED",
+        "text": "Semantic Version Sorting: Implemented natural descending SemVer comparisons to correctly prioritize recent patch and minor point releases."
+      },
+      {
+        "tag": "FIXED",
+        "text": "Container Edit Initialization: Fixed ReferenceError during modal initialization when tag suggestions container is initialized."
+      }
+    ]
+  },
+  {
+    "version": "v1.9.8.26",
+    "date": "October 2026",
+    "badge": "STABLE",
+    "borderColor": "border-blue-500",
     "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
     "title": "Standardized Stack Root, Compose Pre-Flight & PTY Viewport Sync",
     "changes": [
