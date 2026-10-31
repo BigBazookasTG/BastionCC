@@ -519,7 +519,7 @@
             <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
             <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
                 <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
-                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8.26 Changelog</span></div>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8.32 Changelog</span></div>
             </div>
         </div>
     </nav>
@@ -2253,6 +2253,10 @@ window.openEditModal = async function(containerId) {
   const cleanId = String(containerId).replace(/^\//, '').trim();
   _spCurContainerId = cleanId;
 
+  // Safely reset suggestions dropdown
+  const suggestions = document.getElementById('sp-tag-suggestions');
+  if (suggestions) suggestions.style.display = 'none';
+
   document.getElementById('sp-view-form').style.display = 'block';
   document.getElementById('sp-view-stepper').style.display = 'none';
   document.getElementById('container-edit-modal').style.display = 'flex';
@@ -2265,6 +2269,13 @@ window.openEditModal = async function(containerId) {
     document.getElementById('sp-modal-title').textContent = 'Edit: ' + cfg.name;
     document.getElementById('sp-modal-cur-img').textContent = cfg.currentImage;
     document.getElementById('sp-image-input').value = cfg.currentImage;
+    // Auto-detect if active container runs beta or dev track
+    const chkBeta = document.getElementById('sp-chk-beta');
+    const chkDev = document.getElementById('sp-chk-dev');
+    const imgLower = (cfg.currentImage || '').toLowerCase();
+
+    if (chkBeta) chkBeta.checked = /(beta|rc|alpha)/i.test(imgLower);
+    if (chkDev) chkDev.checked = /(dev|develop|nightly|canary|edge|unstable)/i.test(imgLower);
     document.getElementById('sp-restart-policy').value = cfg.restartPolicy || 'no';
     document.getElementById('sp-privileged').checked = !!cfg.privileged;
 
@@ -2296,6 +2307,74 @@ window.openEditModal = async function(containerId) {
   }
 };
 
+window.checkRegistryTags = async function() {
+  const imgInput = document.getElementById('sp-image-input');
+  const fullImage = (imgInput ? imgInput.value : '').trim();
+  if (!fullImage) return alert('Please enter a valid image name first.');
+
+  const btn = document.getElementById('sp-btn-check-tags');
+  const btnText = document.getElementById('sp-tag-check-text');
+  const spinner = document.getElementById('sp-tag-check-spinner');
+  const container = document.getElementById('sp-tag-suggestions');
+  const pillsList = document.getElementById('sp-tag-pills-list');
+
+  // Read channel toggle states
+  const includeBeta = !!(document.getElementById('sp-chk-beta')?.checked);
+  const includeDev = !!(document.getElementById('sp-chk-dev')?.checked);
+
+  // Parse repo and active tag safely
+  let repo = fullImage;
+  let currentTag = 'latest';
+
+  const lastColon = fullImage.lastIndexOf(':');
+  if (lastColon !== -1 && !fullImage.slice(lastColon).includes('/')) {
+    repo = fullImage.substring(0, lastColon);
+    currentTag = fullImage.substring(lastColon + 1);
+  }
+
+  btn.disabled = true;
+  btnText.textContent = 'Checking...';
+  spinner.style.display = 'inline-block';
+
+  try {
+    const url = `/api/docker/registry/tags?image=${encodeURIComponent(repo)}&currentTag=${encodeURIComponent(currentTag)}&includeBeta=${includeBeta}&includeDev=${includeDev}`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || 'Failed to inspect registry');
+
+    pillsList.innerHTML = '';
+    if (!data.tags || data.tags.length === 0) {
+      pillsList.innerHTML = `<span style="font-size: 11px; color: #10b981; font-family: monospace;">✔ No newer candidates found matching selected channels.</span>`;
+    } else {
+      data.tags.forEach(tag => {
+        const pillBtn = document.createElement('button');
+        pillBtn.type = 'button';
+        pillBtn.className = 'sp-btn-xs';
+        pillBtn.style.fontFamily = 'monospace';
+        pillBtn.style.padding = '3px 8px';
+        pillBtn.style.borderColor = '#475569';
+        pillBtn.textContent = tag;
+        pillBtn.onclick = () => {
+          imgInput.value = `${repo}:${tag}`;
+          container.style.display = 'none';
+          if (typeof showToast === 'function') showToast(`Selected tag: ${tag}`);
+        };
+        pillsList.appendChild(pillBtn);
+      });
+    }
+
+    container.style.display = 'block';
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('Registry Check Error: ' + err.message, 'error');
+    else alert('Registry Check Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = '🔍 Check Registry';
+    spinner.style.display = 'none';
+  }
+};
+
 window.spToggleComposeAck = function() {
   const compAck = document.getElementById('sp-compose-ack');
   const deployBtn = document.getElementById('sp-btn-deploy');
@@ -2307,6 +2386,8 @@ window.spToggleComposeAck = function() {
 
 window.closeEditModal = function() {
   if (_spEvtSource) { _spEvtSource.close(); _spEvtSource = null; }
+  const suggestions = document.getElementById('sp-tag-suggestions');
+  if (suggestions) suggestions.style.display = 'none';
   document.getElementById('container-edit-modal').style.display = 'none';
 };
 
@@ -3590,9 +3671,34 @@ async function handleImportStack(e) {
       </div>
 
       <div class="sp-form-section">
-        <label for="sp-image-input">Docker Image & Tag</label>
-        <input type="text" id="sp-image-input" class="sp-input-text" placeholder="e.g., redis:7.4-alpine" required>
-        <span class="sp-hint">Edit repository or version tag directly.</span>
+        <div class="sp-title-row">
+          <label for="sp-image-input">Docker Image & Tag</label>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: #94a3b8; cursor: pointer; user-select: none;">
+              <input type="checkbox" id="sp-chk-beta" style="accent-color: #f97316;">
+              <span>Beta / RC</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: #94a3b8; cursor: pointer; user-select: none;">
+              <input type="checkbox" id="sp-chk-dev" style="accent-color: #f97316;">
+              <span>Dev / Nightly</span>
+            </label>
+            <button type="button" id="sp-btn-check-tags" class="sp-btn-xs" style="color: #f97316; border-color: rgba(249,115,22,0.4);" onclick="checkRegistryTags()">
+              <span id="sp-tag-check-spinner" class="sp-spinner" style="display: none; width: 10px; height: 10px; vertical-align: middle; margin-right: 4px;"></span>
+              <span id="sp-tag-check-text">🔍 Check Registry</span>
+            </button>
+          </div>
+        </div>
+        <input type="text" id="sp-image-input" class="sp-input-text font-mono" placeholder="e.g., redis:7.4-alpine" required>
+        <span class="sp-hint">Edit repository or version tag directly, or inspect available tags above.</span>
+
+        <!-- Dynamic Tag Suggestions Container -->
+        <div id="sp-tag-suggestions" style="display: none; margin-top: 8px; padding: 10px; background: #0b0f17; border: 1px solid #334155; border-radius: 6px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase;">Available Upstream Tags:</span>
+            <button type="button" style="background: none; border: none; color: #64748b; font-size: 11px; cursor: pointer;" onclick="document.getElementById('sp-tag-suggestions').style.display='none'">✕ Dismiss</button>
+          </div>
+          <div id="sp-tag-pills-list" style="display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow-y: auto;"></div>
+        </div>
       </div>
 
       <div class="sp-form-section">
