@@ -1,11 +1,10 @@
-[
-  {
+{
     "version": "v1.9.8.32",
     "date": "October 2026",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
     "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-    "title": "On-Demand Registry Tag Inspector & Path-Traversal Hardening",
+    "title": "On-Demand Registry Tag Inspector, ReDoS Defense & Path Hardening",
     "changes": [
       {
         "tag": "FEATURE",
@@ -22,6 +21,10 @@
       {
         "tag": "SECURITY",
         "text": "Path Traversal & ReDoS Defense: Replaced polynomial trailing-slash regex on stack import routes with non-regex slicing, POSIX normalization, metacharacter bans, and strict boundary checks."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Registry Tag ReDoS Mitigation: Decommissioned backtracking polynomial regular expressions on user-controlled image tags in favor of deterministic string slicing and allowlist checks."
       },
       {
         "tag": "CORE",
