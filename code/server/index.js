@@ -276,18 +276,29 @@ const HEADER_DICT = {
 
 function escapeHtmlForReport(str) { return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
 
-function fetchHttpsJson(url, headers = {}) {
+function fetchHttpsJson(targetUrl, headers = {}, maxRedirects = 3) {
     return new Promise((resolve, reject) => {
-        const req = https.get(url, { headers: { 'User-Agent': 'BastionCC/1.9', ...headers }, timeout: 4000 }, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                try { resolve(JSON.parse(data)); }
-                catch(e) { reject(e); }
+        const execute = (currentUrl, redirectsLeft) => {
+            const parsedUrl = new URL(currentUrl);
+            const req = https.get(parsedUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36', 'Accept': 'application/json', ...headers }, timeout: 5000 }, (res) => {
+                if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location && redirectsLeft > 0) {
+                    const nextUrl = new URL(res.headers.location, currentUrl).toString();
+                    return execute(nextUrl, redirectsLeft - 1);
+                }
+                if (res.statusCode < 200 || res.statusCode >= 300) {
+                    return reject(new Error(`HTTP ${res.statusCode}`));
+                }
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    try { resolve(JSON.parse(data)); }
+                    catch(e) { reject(e); }
+                });
             });
-        });
-        req.on('error', err => reject(err));
-        req.on('timeout', function() { this.destroy(); reject(new Error('Timeout')); });
+            req.on('error', err => reject(err));
+            req.on('timeout', function() { this.destroy(); reject(new Error('Timeout')); });
+        };
+        execute(targetUrl, maxRedirects);
     });
 }
 
@@ -1914,8 +1925,25 @@ app.post('/api/docker/compose/import', async (req, res) => {
       return res.status(400).json({ error: 'Source directory path is required.' });
     }
 
-    // Sanitize source path: prohibit shell metacharacters and trailing slashes
-    sourcePath = sourcePath.replace(/\/+$/, '');
+    // 1. Hard Block: Prohibit shell metacharacters entirely
+    if (/[;&|`$><!\n\r]/.test(sourcePath)) {
+      return res.status(400).json({ error: 'Invalid characters detected in source path.' });
+    }
+
+    // 2. Safe Tail Slicing: Strip trailing slashes without regex backtracking (avoids ReDoS)
+    while (sourcePath.length > 1 && sourcePath.endsWith('/')) {
+      sourcePath = sourcePath.slice(0, -1);
+    }
+
+    // 3. Normalize path structure (collapses '.', '..', and duplicate slashes)
+    sourcePath = path.posix.normalize(sourcePath);
+
+    // 4. Boundary Guard: Disallow importing root or raw relative traversal
+    if (sourcePath === '/' || sourcePath === '.' || sourcePath.startsWith('../')) {
+      return res.status(400).json({ error: 'Source path cannot be root or an unanchored relative path.' });
+    }
+
+    // 5. Allowlist validation for safe filesystem characters
     if (!/^[a-zA-Z0-9_\-\.\/~]+$/.test(sourcePath)) {
       return res.status(400).json({ error: 'Invalid source path format.' });
     }
@@ -1928,15 +1956,20 @@ app.post('/api/docker/compose/import', async (req, res) => {
       return res.status(400).json({ error: 'Invalid stack name. Use alphanumeric characters, dashes, or underscores.' });
     }
 
-    // 1. Verify source directory exists on host
+    // 6. Loopback Guard: Prevent copying a stack into its own directory
+    const targetDir = `/opt/bastion/stacks/${targetName}`;
+    if (sourcePath === targetDir) {
+      return res.status(400).json({ error: 'Source path is already the target stack destination.' });
+    }
+
+    // 7. Verify source directory exists on host
     const checkSourceCmd = `[ -d ${_shQuote(sourcePath)} ] && echo "OK" || echo "NOT_FOUND"`;
     const sourceCheck = (await _bccDockerExec(ssh, checkSourceCmd)).trim();
     if (!sourceCheck.includes('OK')) {
       return res.status(404).json({ error: `Source directory does not exist on host: ${sourcePath}` });
     }
 
-    // 2. Ensure target /opt/bastion/stacks/<targetName> directory
-    const targetDir = `/opt/bastion/stacks/${targetName}`;
+    // 8. Ensure target /opt/bastion/stacks/<targetName> directory exists
     await _ensureStacksRoot(ssh, '/opt/bastion/stacks');
     const initTargetCmd = [
       `sudo -n mkdir -p ${_shQuote(targetDir)}`,
@@ -1945,7 +1978,7 @@ app.post('/api/docker/compose/import', async (req, res) => {
     ].join(' && ');
     await _bccDockerExec(ssh, initTargetCmd);
 
-    // 3. Copy contents recursively (-n: no-clobber prevents accidental overwrites)
+    // 9. Copy contents recursively (-n: no-clobber prevents accidental overwrites)
     const copyCmd = `sudo -n cp -rn ${_shQuote(sourcePath)}/. ${_shQuote(targetDir)}/ 2>&1; echo "___CP_STATUS___:$?"`;
     const copyRaw = await _bccDockerExec(ssh, copyCmd);
     const cpMatch = copyRaw.match(/___CP_STATUS___:(\d+)/);
@@ -1956,10 +1989,10 @@ app.post('/api/docker/compose/import', async (req, res) => {
       return res.status(500).json({ error: `Failed to copy stack files: ${errOut}` });
     }
 
-    // 4. Ensure copied files inherit docker group readability
+    // 10. Ensure copied files inherit docker group readability
     await _bccDockerExec(ssh, `sudo -n chown -R :docker ${_shQuote(targetDir)} 2>/dev/null; sudo -n chmod -R g+rX ${_shQuote(targetDir)} 2>/dev/null || true`);
 
-    // 5. Inspect target to locate compose file
+    // 11. Inspect target to locate compose file
     const detectCmd = `ls -1 ${_shQuote(targetDir)} 2>/dev/null | grep -E '^(docker-compose\\.ya?ml|compose\\.ya?ml)$' | head -n 1`;
     const foundFile = (await _bccDockerExec(ssh, detectCmd)).trim() || 'docker-compose.yml';
 
@@ -2005,6 +2038,210 @@ app.post('/api/docker/containers/create-single', async (req, res) => {
   }
 });
 
+// ============================================================================
+// DOCKER REGISTRY TAG INSPECTION ENGINE (Zero-Pull Manifest Checks)
+// ============================================================================
+
+// ============================================================================
+// DOCKER REGISTRY AUTH & CREDENTIAL DISCOVERY (In-Memory Host Probe)
+// ============================================================================
+
+/**
+ * Safely discovers Docker registry credentials from the connected host's
+ * ~/.docker/config.json or /root/.docker/config.json over the active SSH session.
+ * Credentials remain in memory and are never returned to client responses.
+ *
+ * @param {object} ssh - Active SSH client instance
+ * @param {string} registryHost - Target registry (e.g., 'docker.io' or 'ghcr.io')
+ * @returns {Promise<string|null>} Base64 auth string or null if unauthenticated
+ */
+async function _resolveHostDockerAuth(ssh, registryHost = 'docker.io') {
+  if (!ssh) return null;
+
+  try {
+    // Probe user home and root config files without parameter concatenation
+    const probeCmd = 'cat ~/.docker/config.json 2>/dev/null || sudo -n cat /root/.docker/config.json 2>/dev/null || true';
+    const rawConfig = await _runSshCmd(ssh, probeCmd);
+    if (!rawConfig || !rawConfig.trim()) return null;
+
+    const parsed = JSON.parse(rawConfig.trim());
+    const auths = parsed.auths || {};
+
+    // Standardize registry lookup keys
+    if (registryHost === 'docker.io') {
+      const dockerAuth = auths['https://index.docker.io/v1/'] || auths['docker.io'] || auths['index.docker.io'];
+      return (dockerAuth && dockerAuth.auth) ? dockerAuth.auth : null;
+    }
+
+    const regAuth = auths[registryHost] || auths[`https://${registryHost}`] || auths[`https://${registryHost}/v1/`];
+    return (regAuth && regAuth.auth) ? regAuth.auth : null;
+  } catch (_) {
+    // If config does not exist, requires interactive sudo, or is malformed JSON, proceed with anonymous token fallback
+    return null;
+  }
+}
+
+// ============================================================================
+// DOCKER REGISTRY TAG INSPECTION ENGINE (Authenticated & Chronological)
+// ============================================================================
+
+/**
+ * Fetches and filters remote release tags directly from Docker Hub or GHCR.
+ *
+ * @param {object} ssh - Active SSH client instance
+ * @param {string} rawImage - Full image string (e.g. "nginx", "metabase/metabase", "ghcr.io/org/app")
+ * @param {string} [currentTag] - Currently running tag
+ * @param {object} [options] - Filtering options { includeBeta: false, includeDev: false }
+ * @returns {Promise<string[]>} Array of candidate upgrade tags
+ */
+async function fetchRegistryTags(ssh, rawImage, currentTag = '', options = {}) {
+  let repo = rawImage.trim();
+  let registry = 'docker.io';
+
+  if (repo.includes('/')) {
+    const segments = repo.split('/');
+    if (segments[0].includes('.') || segments[0].includes(':')) {
+      registry = segments[0].toLowerCase();
+      repo = segments.slice(1).join('/');
+    }
+  }
+
+  if (registry === 'docker.io' && !repo.includes('/')) {
+    repo = `library/${repo}`;
+  }
+
+  if (!/^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$/i.test(repo)) {
+    throw new Error('Invalid repository namespace or format.');
+  }
+
+  const hostAuthBase64 = await _resolveHostDockerAuth(ssh, registry);
+  let tags = [];
+
+  if (registry === 'docker.io') {
+    const hubHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'application/json'
+    };
+    if (hostAuthBase64) hubHeaders['Authorization'] = `Basic ${hostAuthBase64}`;
+
+    // Target the current major version (e.g., '4.' from '4.39.28') to prevent 3.x truncation
+    const majorMatch = currentTag.match(/^(?:v)?([0-9]+)\./i);
+    const filterParam = majorMatch ? `&name=${encodeURIComponent(majorMatch[1] + '.')}` : '';
+    const hubApiUrl = `https://hub.docker.com/v2/repositories/${repo}/tags?page_size=100${filterParam}`;
+
+    try {
+      const hubData = await fetchHttpsJson(hubApiUrl, hubHeaders);
+      if (hubData && Array.isArray(hubData.results)) {
+        console.log(`[BastionCC] Docker Hub API returned ${hubData.results.length} tags for ${repo}`);
+        tags = hubData.results
+          .sort((a, b) => {
+            const dateA = a.tag_last_pushed ? new Date(a.tag_last_pushed).getTime() : 0;
+            const dateB = b.tag_last_pushed ? new Date(b.tag_last_pushed).getTime() : 0;
+            if (dateA !== dateB) return dateB - dateA;
+
+            const cleanA = (a.name || '').replace(/^v/i, '');
+            const cleanB = (b.name || '').replace(/^v/i, '');
+            return cleanB.localeCompare(cleanA, undefined, { numeric: true, sensitivity: 'base' });
+          })
+          .map(r => r.name);
+      }
+    } catch (err) {
+      console.warn(`[BastionCC] Docker Hub API query failed (${err.message}), falling back to OCI registry...`);
+    }
+
+    // Fallback: OCI Registry V2
+    if (tags.length === 0) {
+      const authHeaders = hostAuthBase64 ? { Authorization: `Basic ${hostAuthBase64}` } : {};
+      const authUrl = `https://auth.docker.io/token?service=registry.docker.io&scope=repository:${encodeURIComponent(repo)}:pull`;
+      const tokenPayload = await fetchHttpsJson(authUrl, authHeaders);
+      const token = tokenPayload && tokenPayload.token;
+
+      if (token) {
+        const listUrl = `https://registry-1.docker.io/v2/${repo}/tags/list`;
+        const fallbackData = await fetchHttpsJson(listUrl, { Authorization: `Bearer ${token}` });
+        const rawTags = (fallbackData && Array.isArray(fallbackData.tags)) ? fallbackData.tags : [];
+
+        tags = rawTags.sort((a, b) => {
+          const cleanA = a.replace(/^v/i, '');
+          const cleanB = b.replace(/^v/i, '');
+          return cleanB.localeCompare(cleanA, undefined, { numeric: true, sensitivity: 'base' });
+        });
+      }
+    }
+  } else if (registry === 'ghcr.io') {
+    const authHeaders = hostAuthBase64 ? { Authorization: `Basic ${hostAuthBase64}` } : {};
+    const authUrl = `https://ghcr.io/token?service=ghcr.io&scope=repository:${encodeURIComponent(repo)}:pull`;
+    const tokenPayload = await fetchHttpsJson(authUrl, authHeaders);
+    const token = tokenPayload && tokenPayload.token;
+    if (!token) throw new Error('Failed to acquire authentication token from GHCR.');
+
+    const listUrl = `https://ghcr.io/v2/${repo}/tags/list`;
+    const tagPayload = await fetchHttpsJson(listUrl, { Authorization: `Bearer ${token}` });
+    const rawTags = (tagPayload && Array.isArray(tagPayload.tags)) ? tagPayload.tags : [];
+    tags = rawTags.sort((a, b) => {
+      const cleanA = a.replace(/^v/i, '');
+      const cleanB = b.replace(/^v/i, '');
+      return cleanB.localeCompare(cleanA, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  } else {
+    throw new Error(`Unsupported registry '${registry}'. Only Docker Hub and GHCR are currently supported.`);
+  }
+
+  if (tags.length === 0) return [];
+
+  // Exclude unwanted release channels
+  const excludedPatterns = [];
+  if (!options.includeDev) {
+    excludedPatterns.push('dev', 'develop', 'nightly', 'canary', 'edge', 'unstable', 'test', 'master', 'main');
+  }
+  if (!options.includeBeta) {
+    excludedPatterns.push('beta', 'alpha', 'rc');
+  }
+
+  const PRERELEASE_REGEX = excludedPatterns.length > 0
+    ? new RegExp(`(${excludedPatterns.join('|')})`, 'i')
+    : null;
+
+  // Flavor suffix matching (e.g. -alpine, -slim)
+  const flavorMatch = currentTag.match(/-(alpine.*|slim.*|bullseye.*|bookworm.*|debian.*|ubuntu.*)$/i);
+  const targetFlavor = flavorMatch ? flavorMatch[1].toLowerCase() : null;
+
+  const validCandidates = tags.filter(tag => {
+    if (tag === currentTag) return false;
+    if (PRERELEASE_REGEX && PRERELEASE_REGEX.test(tag)) return false;
+
+    if (targetFlavor) {
+      return tag.toLowerCase().endsWith(`-${targetFlavor}`);
+    } else {
+      return !/-(alpine|slim|bullseye|bookworm|debian|ubuntu)/i.test(tag);
+    }
+  });
+
+  return validCandidates.slice(0, 12);
+}
+
+app.get('/api/docker/registry/tags', async (req, res) => {
+  try {
+    const rawImage = String(req.query.image || '').trim();
+    const currentTag = String(req.query.currentTag || '').trim();
+    const includeBeta = req.query.includeBeta === 'true';
+    const includeDev = req.query.includeDev === 'true';
+
+    if (!rawImage || !_isValidImageTag(rawImage)) {
+      return res.status(400).json({ error: 'Valid Docker image repository is required.' });
+    }
+
+    if (currentTag && !_isValidImageTag(currentTag)) {
+      return res.status(400).json({ error: 'Invalid current tag format.' });
+    }
+
+    const ssh = _resolveSsh();
+    const tags = await fetchRegistryTags(ssh, rawImage, currentTag, { includeBeta, includeDev });
+    res.json({ success: true, tags });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get('/api/docker/images/unused', async (req, res) => {
   try {
