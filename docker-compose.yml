@@ -1,6 +1,6 @@
 services:
   dashboard:
-    image: ghcr.io/bigbazookastg/bastioncc:v1.9.8.26.node.patched  
+    image: ghcr.io/bigbazookastg/bastioncc:v1.9.8.32
     container_name: bastioncc
     restart: no
     ports:
