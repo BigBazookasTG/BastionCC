@@ -59,6 +59,26 @@ if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
 console.log(`[Storage] Environment: ${activeEnv}`);
 console.log(`[Storage] Active Vault Directory: ${CONFIG_DIR}`);
 
+// --- SYNCHRONOUS CRASH LOGGER & UNHANDLED ERROR GUARDS ---
+const CRASH_LOG_FILE = path.join(CONFIG_DIR, 'bastion-crash.log');
+
+function recordFatalError(type, err) {
+    const timestamp = new Date().toISOString();
+    const stack = (err && err.stack) ? err.stack : String(err);
+    const entry = `\n[${timestamp}] [${type}]\n${stack}\n${'='.repeat(60)}\n`;
+    try {
+        fs.appendFileSync(CRASH_LOG_FILE, entry, { encoding: 'utf8' });
+    } catch (_) {}
+    console.error(`[BastionCC ${type}]`, stack);
+}
+
+process.on('uncaughtException', (err) => {
+    recordFatalError('UncaughtException', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+    recordFatalError('UnhandledRejection', reason);
+});
 
 const AUTH_FILE = path.join(CONFIG_DIR, 'auth.json');
 const DATA_FILE = path.join(CONFIG_DIR, 'servers.json');
@@ -1720,26 +1740,42 @@ app.post('/api/docker/compose/destroy', async (req, res) => {
       export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin:~/.docker/cli-plugins"
       WORKDIR=${_shQuote(workingDir)}
       PROJ=${_shQuote(projectName)}
+      EXIT_CODE=0
       
       if [ -n "$WORKDIR" ] && [ -d "$WORKDIR" ]; then
         cd "$WORKDIR"
         if docker compose version >/dev/null 2>&1; then
           docker compose -p "$PROJ" ${downFlags} 2>&1
+          EXIT_CODE=$?
         elif docker-compose version >/dev/null 2>&1; then
           docker-compose -p "$PROJ" ${downFlags} 2>&1
+          EXIT_CODE=$?
         fi
-        cd ~
-        rm -rf "$WORKDIR"
+        if [ $EXIT_CODE -eq 0 ]; then
+          cd ~
+          rm -rf "$WORKDIR"
+        fi
       else
         if docker compose version >/dev/null 2>&1; then
           docker compose -p "$PROJ" ${downFlags} 2>&1
+          EXIT_CODE=$?
         elif docker-compose version >/dev/null 2>&1; then
           docker-compose -p "$PROJ" ${downFlags} 2>&1
+          EXIT_CODE=$?
         fi
       fi
+      echo "___DESTROY_STATUS___:$EXIT_CODE"
     `;
 
-    const output = await _bccDockerExec(ssh, destroyScript);
+    const rawDestroy = await _bccDockerExec(ssh, destroyScript);
+    const destMatch = rawDestroy.match(/___DESTROY_STATUS___:(\d+)/);
+    const destCode = destMatch ? parseInt(destMatch[1], 10) : 1;
+    const output = rawDestroy.replace(/___DESTROY_STATUS___:\d+/, '').trim();
+
+    if (destCode !== 0) {
+      return res.status(422).json({ success: false, error: output || `Compose teardown failed (exit code ${destCode})` });
+    }
+
     res.json({ success: true, output });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1895,7 +1931,7 @@ fi
       });
     }
 
-    // 5. Pre-flight passed: Ensure target working directory & deploy stack
+    // 5. Pre-flight passed: Ensure target working directory & deploy stack with strict exit-code trapping
     const deployCmd = `export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin:~/.docker/cli-plugins"
 mkdir -p ${_shQuote(workingDir)}
 echo "${b64Yaml}" | base64 -d > ${_shQuote(workingDir + '/docker-compose.yml')}
@@ -1903,12 +1939,28 @@ echo "${b64Env}" | base64 -d > ${_shQuote(workingDir + '/.env')}
 cd ${_shQuote(workingDir)}
 if docker compose version >/dev/null 2>&1; then
   docker compose -p ${_shQuote(projectName)} --project-directory ${_shQuote(workingDir)} up -d 2>&1
-else
+  echo "___DEPLOY_STATUS___:$?"
+elif docker-compose version >/dev/null 2>&1; then
   docker-compose -p ${_shQuote(projectName)} --project-directory ${_shQuote(workingDir)} up -d 2>&1
+  echo "___DEPLOY_STATUS___:$?"
+else
+  echo "Docker Compose CLI is not installed or not in PATH"
+  echo "___DEPLOY_STATUS___:127"
 fi
 `;
 
-    const deployOutput = await _bccDockerExec(ssh, deployCmd);
+    const deployRaw = await _bccDockerExec(ssh, deployCmd);
+    const depMatch = deployRaw.match(/___DEPLOY_STATUS___:(\d+)/);
+    const depExitCode = depMatch ? parseInt(depMatch[1], 10) : 1;
+    const deployOutput = deployRaw.replace(/___DEPLOY_STATUS___:\d+/, '').trim();
+
+    if (depExitCode !== 0) {
+      return res.status(422).json({
+        success: false,
+        output: deployOutput || `Docker Compose exited with code ${depExitCode} (empty output — check SSH permissions or daemon status).`
+      });
+    }
+
     res.json({ success: true, output: deployOutput, workingDir });
   } catch (err) {
     res.status(500).json({ error: err.message });
