@@ -1,8 +1,31 @@
-{
+[
+  {
+      "version": "v1.9.8.34",
+      "date": "November 2026",
+      "badge": "CURRENT RELEASE",
+      "borderColor": "border-emerald-500",
+      "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+      "title": "Synchronous Crash Telemetry & Strict Compose Exit-Code Trapping",
+      "changes": [
+        {
+          "tag": "STABILITY",
+          "text": "Synchronous Crash Logger: Implemented zero-dependency synchronous file logging (bastion-crash.log) for uncaught exceptions and unhandled rejections to preserve stack traces across remote process drops."
+        },
+        {
+          "tag": "BUG FIX",
+          "text": "Docker Compose Exit-Code Trapping: Explicitly captured exit statuses on stack deployment and teardown pipelines, eliminating false-positive Up & Running statuses when docker compose fails."
+        },
+        {
+          "tag": "CORE",
+          "text": "Version Bump & Pipeline Sync: Synchronized telemetry, package schemas, and build pipelines to v1.9.8.34."
+        }
+      ]
+    },
+  {
     "version": "v1.9.8.32",
     "date": "October 2026",
-    "badge": "CURRENT RELEASE",
-    "borderColor": "border-emerald-500",
+    "badge": "STABLE",
+    "borderColor": "border-blue-500",
     "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
     "title": "On-Demand Registry Tag Inspector, ReDoS Defense & Path Hardening",
     "changes": [
