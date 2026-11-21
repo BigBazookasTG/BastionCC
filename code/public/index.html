@@ -4628,20 +4628,66 @@ window.SftpEditorModal = {
   },
 
   highlightCode(code, lang) {
-    let escaped = escapeHtml(code);
+
     if (lang === 'JSON') {
-      escaped = escaped
-        .replace(/(&quot;(?:\\.|[^&])*?&quot;)(\s*:)/g, '<span class="text-sky-400 font-semibold">$1</span>$2')
-        .replace(/(:\s*)(&quot;(?:\\.|[^&])*?&quot;)/g, '$1<span class="text-amber-300">$2</span>')
-        .replace(/\b(true|false|null)\b/g, '<span class="text-pink-400 font-semibold">$1</span>')
-        .replace(/\b(-?\d+(?:\.\d+)?)\b/g, '<span class="text-purple-400">$1</span>');
-    } else if (lang === 'YAML' || lang === 'DOCKERFILE' || lang === 'NGINX / CONF' || lang === 'ENV / INI' || lang === 'SYSTEMD') {
+      let out = '';
+      let i = 0;
+      const len = code.length;
+      while (i < len) {
+        const ch = code[i];
+        if (ch === '"') {
+          let end = i + 1;
+          while (end < len) {
+            if (code[end] === '\\') {
+              end += 2;
+              continue;
+            }
+            if (code[end] === '"') {
+              end++;
+              break;
+            }
+            end++;
+          }
+          const rawStr = code.slice(i, end);
+          let lookahead = end;
+          while (lookahead < len && (code[lookahead] === ' ' || code[lookahead] === '\t' || code[lookahead] === '\r' || code[lookahead] === '\n')) {
+            lookahead++;
+          }
+          const cls = code[lookahead] === ':' ? 'text-sky-400 font-semibold' : 'text-amber-300';
+          out += `<span class="${cls}">${escapeHtml(rawStr)}</span>`;
+          i = end;
+        } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch === '_') {
+          let end = i + 1;
+          while (end < len && /[a-zA-Z0-9_]/.test(code[end])) end++;
+          const word = code.slice(i, end);
+          if (word === 'true' || word === 'false' || word === 'null') {
+            out += `<span class="text-pink-400 font-semibold">${word}</span>`;
+          } else {
+            out += escapeHtml(word);
+          }
+          i = end;
+        } else if ((ch >= '0' && ch <= '9') || (ch === '-' && i + 1 < len && code[i + 1] >= '0' && code[i + 1] <= '9')) {
+          let end = i + 1;
+          while (end < len && /[0-9.eE+-]/.test(code[end])) end++;
+          out += `<span class="text-purple-400">${escapeHtml(code.slice(i, end))}</span>`;
+          i = end;
+        } else {
+          out += escapeHtml(ch);
+          i++;
+        }
+      }
+      return out + (code.endsWith('\n') ? ' ' : '');
+    }
+
+    let escaped = escapeHtml(code);
+    if (lang === 'YAML' || lang === 'DOCKERFILE' || lang === 'NGINX / CONF' || lang === 'ENV / INI' || lang === 'SYSTEMD') {
       escaped = escaped
         .replace(/(^|\n)([ \t]*#[^\n]*)/g, '$1<span class="text-slate-500 italic">$2</span>')
         .replace(/(^|\n)([ \t]*[a-zA-Z0-9_.-]+)(\s*[:=])/g, '$1<span class="text-sky-400 font-semibold">$2</span>$3')
         .replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;)/g, '<span class="text-amber-300">$1</span>')
         .replace(/\b(true|false|yes|no|on|off)\b/gi, '<span class="text-pink-400 font-semibold">$1</span>');
     } else if (['BASH', 'JAVASCRIPT', 'TYPESCRIPT', 'PYTHON', 'SQL'].includes(lang)) {
+
       escaped = escaped
         .replace(/(^|\n)([ \t]*(?:#|\/\/|--)[^\n]*)/g, '$1<span class="text-slate-500 italic">$2</span>')
         .replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;)/g, '<span class="text-amber-300">$1</span>')
