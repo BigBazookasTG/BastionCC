@@ -436,6 +436,7 @@ io.use((socket, next) => {
 
 io.on('connection', (socket) => {
     let sshClient = null; global.getActiveSSH = () => sshClient; let sftpSession = null; let activeShellStream = null; 
+    let containerShellStream = null;
     let statsInterval = null; let dockerInterval = null; const activeUploads = new Map();
     let prevCpuTicks = null;
 
@@ -546,7 +547,31 @@ io.on('connection', (socket) => {
         socket.emit('threat-map-data', countryMap);
     });
 
-    // --- MULTI-ENGINE FIREWALL DISCOVERY & THREAT SCANNER ---
+    // --- MULTI-ENGINE FIREWALL DISCOVERY & CIDR-AWARE THREAT SCANNER ---
+    function _ipv4ToUint32(ip) {
+        const parts = String(ip).split('.');
+        if (parts.length !== 4) return null;
+        let num = 0;
+        for (let i = 0; i < 4; i++) {
+            const oct = Number(parts[i]);
+            if (!Number.isInteger(oct) || oct < 0 || oct > 255) return null;
+            num = ((num << 8) | oct) >>> 0;
+        }
+        return num >>> 0;
+    }
+
+    function _parseCidrRule(entry) {
+        const raw = String(entry || '').trim();
+        const slashIdx = raw.indexOf('/');
+        const ipPart = slashIdx !== -1 ? raw.slice(0, slashIdx) : raw;
+        const prefix = slashIdx !== -1 ? parseInt(raw.slice(slashIdx + 1), 10) : 32;
+        if (!net.isIPv4(ipPart) || !Number.isInteger(prefix) || prefix < 8 || prefix > 32) return null;
+        const ipInt = _ipv4ToUint32(ipPart);
+        if (ipInt === null || ipInt === 0) return null;
+        const mask = prefix === 32 ? 0xFFFFFFFF : ((0xFFFFFFFF << (32 - prefix)) >>> 0);
+        return { networkInt: (ipInt & mask) >>> 0, mask };
+    }
+
     socket.on('scan-log-threats', ({ type, path: logPath }) => {
         if (!sshClient || !/^[\/a-zA-Z0-9_.-]+$/.test(logPath)) {
             return socket.emit('log-threats-result', { error: 'Invalid log path or not connected' });
@@ -557,24 +582,23 @@ io.on('connection', (socket) => {
             : `cat "${logPath}" 2>/dev/null || tail -n 10000 "${logPath}" 2>/dev/null`;
         
         const pipelineCmd = `
-            BANNED_REGEX=$( ( \\
-                sudo -n cscli decisions list -o raw 2>/dev/null | grep -aEo "([0-9]{1,3}\\.){3}[0-9]{1,3}" ; \\
-                sudo -n fail2ban-client banned 2>/dev/null | grep -aEo "([0-9]{1,3}\\.){3}[0-9]{1,3}" ; \\
-                sudo -n ufw status 2>/dev/null | grep -aEo "([0-9]{1,3}\\.){3}[0-9]{1,3}" ; \\
-                sudo -n firewall-cmd --list-rich-rules 2>/dev/null | grep -aEo "([0-9]{1,3}\\.){3}[0-9]{1,3}" ; \\
-                sudo -n nft list ruleset 2>/dev/null | grep -aEo "([0-9]{1,3}\\.){3}[0-9]{1,3}" ; \\
-                sudo -n iptables -L -n 2>/dev/null | grep -aEo "([0-9]{1,3}\\.){3}[0-9]{1,3}" \\
-            ) | sort -u | paste -sd '|' - )
-            
             { ${logSourceCmd} ; } \
               | grep -aEi "401|403|429|failed|invalid|unauthorized|denied|auth failure|error|found|disconnected|refused|rejected|ban|drop|status code|remote_ip" \
               | grep -aEo "([0-9]{1,3}\\.){3}[0-9]{1,3}" \
               | grep -vE "^(127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[0-1])\\.|192\\.168\\.|0\\.0\\.0\\.0|255\\.255\\.255\\.255)" \
-              | { if [ -n "$BANNED_REGEX" ]; then grep -vE "^($BANNED_REGEX)$"; else cat; fi; } \
               | sort \
               | uniq -c \
               | sort -nr \
-              | head -n 25
+              | head -n 200
+            echo "___BCC_BANNED_SEP___"
+            (
+                sudo -n cscli decisions list -o raw 2>/dev/null ;
+                sudo -n fail2ban-client banned 2>/dev/null ;
+                sudo -n ufw status 2>/dev/null | grep -E "DENY|REJECT" ;
+                sudo -n firewall-cmd --list-rich-rules 2>/dev/null | grep -E "drop|reject" ;
+                sudo -n nft list ruleset 2>/dev/null | grep -E "drop|reject" ;
+                sudo -n iptables -L -n 2>/dev/null | grep -E "DROP|REJECT"
+            ) | grep -aEo "([0-9]{1,3}\\.){3}[0-9]{1,3}(/[0-9]{1,2})?" | sort -u
         `;
 
         sshClient.exec(pipelineCmd, (err, stream) => {
@@ -583,8 +607,18 @@ io.on('connection', (socket) => {
             stream.on('data', d => output += d.toString('utf-8'));
             stream.stderr.on('data', () => {});
             stream.on('close', async () => {
-                const lines = output.trim().split('\n');
-                const threats = [];
+                const [candidatesRaw, bannedRaw] = output.split('___BCC_BANNED_SEP___');
+                const bannedRules = [];
+
+                // Merge active host bans/CIDRs + BastionCC persistent ban ledger
+                const rawEntries = new Set((bannedRaw || '').trim().split('\n').map(s => s.trim()).filter(Boolean));
+                getBanHistory().forEach(b => { if (b && b.ip) rawEntries.add(String(b.ip).trim()); });
+
+                rawEntries.forEach(entry => {
+                    const parsed = _parseCidrRule(entry);
+                    if (parsed) bannedRules.push(parsed);
+                });
+
                 let resolvedHostIp = '';
                 if (sshClient && sshClient._host) {
                     if (net.isIPv4(sshClient._host)) {
@@ -597,14 +631,25 @@ io.on('connection', (socket) => {
                     }
                 }
 
-                lines.forEach(line => {
+                const lines = (candidatesRaw || '').trim().split('\n');
+                const threats = [];
+
+                for (const line of lines) {
+                    if (threats.length >= 25) break;
                     const match = line.trim().match(/^(\d+)\s+(([0-9]{1,3}\.){3}[0-9]{1,3})$/);
                     if (match && net.isIPv4(match[2])) {
                         const ipStr = match[2];
+                        const candInt = _ipv4ToUint32(ipStr);
+                        if (candInt === null) continue;
+
+                        const isAlreadyBanned = bannedRules.some(r => ((candInt & r.mask) >>> 0) === r.networkInt);
+                        if (isAlreadyBanned) continue;
+
                         const isHost = !!((resolvedHostIp && ipStr === resolvedHostIp) || (sshClient && sshClient._host && ipStr === sshClient._host));
-                        threats.push({ count: parseInt(match[1]), ip: ipStr, isHost });
+                        threats.push({ count: parseInt(match[1], 10), ip: ipStr, isHost });
                     }
-                });
+                }
+
                 socket.emit('log-threats-result', { logPath, threats });
             });
         });
@@ -732,6 +777,165 @@ io.on('connection', (socket) => {
                         message: errorDetail 
                     });
                 }
+            });
+        });
+    });
+// --- TWO-STAGE ROTATED LOG SCANNER & CLEANUP ---
+    function _resolveAllowedLogDirs(serverId) {
+        const dirs = new Set(['/var/log']);
+        const srv = getServers().find(s => s.id === serverId);
+        if (srv && Array.isArray(srv.customLogs)) {
+            srv.customLogs.forEach(entry => {
+                if (!entry || entry.type === 'systemd' || !entry.path) return;
+                let raw = String(entry.path).trim();
+                if (entry.type === 'file' || raw.includes('*')) {
+                    raw = path.posix.dirname(raw);
+                }
+                if (!raw.startsWith('/')) return;
+                const norm = path.posix.normalize(raw);
+                const segments = norm.split('/').filter(Boolean);
+                if (segments.length >= 2 && /^\/[a-zA-Z0-9_./-]+$/.test(norm)) {
+                    dirs.add(norm);
+                }
+            });
+        }
+        // Deduplicate child paths if a parent directory is already included
+        const sorted = Array.from(dirs).sort((a, b) => a.length - b.length);
+        const deduped = [];
+        for (const d of sorted) {
+            if (!deduped.some(parent => d === parent || d.startsWith(parent + '/'))) {
+                deduped.push(d);
+            }
+        }
+        return deduped;
+    }
+
+    const _ROTATED_LOG_REGEX = /(\.[0-9]{1,2}|\.gz|\.xz|\.bz2|\.zst|\.old|\.log-[0-9]{8}.*)$/;
+
+    function _isSafeRotatedLogFile(filePath, allowedDirs) {
+        if (typeof filePath !== 'string' || !filePath.startsWith('/')) return false;
+        if (!/^\/[a-zA-Z0-9_./-]+$/.test(filePath)) return false;
+        const norm = path.posix.normalize(filePath);
+        if (norm !== filePath) return false;
+        if (!_ROTATED_LOG_REGEX.test(norm)) return false;
+        return allowedDirs.some(dir => norm.startsWith(dir + '/'));
+    }
+
+    socket.on('scan-old-logs', ({ serverId }) => {
+        if (!sshClient) {
+            return socket.emit('scan-old-logs-result', { error: 'No active SSH connection.' });
+        }
+
+        const scanDirs = _resolveAllowedLogDirs(serverId);
+        const quotedDirs = scanDirs.map(_shQuote).join(' ');
+
+        const scanCmd = `
+            SUDO=""
+            if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+                SUDO="sudo -n"
+            fi
+            for d in ${quotedDirs}; do
+                if [ -d "$d" ]; then
+                    $SUDO find "$d" -type f \\( -name "*.[0-9]" -o -name "*.[0-9][0-9]" -o -name "*.gz" -o -name "*.xz" -o -name "*.bz2" -o -name "*.zst" -o -name "*.old" -o -name "*.log-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*" \\) -exec stat -c '%s|%n' {} + 2>/dev/null || true
+                fi
+            done
+        `;
+
+        sshClient.exec(scanCmd, (err, stream) => {
+            if (err) return socket.emit('scan-old-logs-result', { error: err.message });
+            let out = '';
+            stream.on('data', d => out += d.toString('utf-8'));
+            stream.stderr.on('data', () => {});
+            stream.on('close', () => {
+                const seen = new Set();
+                const files = [];
+                let totalBytes = 0;
+
+                out.split('\n').forEach(line => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return;
+                    const sep = trimmed.indexOf('|');
+                    if (sep === -1) return;
+                    const size = parseInt(trimmed.slice(0, sep), 10) || 0;
+                    const filePath = trimmed.slice(sep + 1).trim();
+                    if (!seen.has(filePath) && _isSafeRotatedLogFile(filePath, scanDirs)) {
+                        seen.add(filePath);
+                        files.push({ path: filePath, size });
+                        totalBytes += size;
+                    }
+                });
+
+                files.sort((a, b) => a.path.localeCompare(b.path));
+                socket.emit('scan-old-logs-result', {
+                    success: true,
+                    dirs: scanDirs,
+                    files,
+                    totalBytes
+                });
+            });
+        });
+    });
+
+    socket.on('delete-old-logs', ({ serverId, files }) => {
+        if (!sshClient) {
+            return socket.emit('delete-old-logs-result', { error: 'No active SSH connection.' });
+        }
+        if (!Array.isArray(files) || files.length === 0) {
+            return socket.emit('delete-old-logs-result', { error: 'No files provided for deletion.' });
+        }
+
+        const allowedDirs = _resolveAllowedLogDirs(serverId);
+        const safeFiles = Array.from(new Set(files)).filter(f => _isSafeRotatedLogFile(f, allowedDirs));
+
+        if (safeFiles.length === 0) {
+            return socket.emit('delete-old-logs-result', { error: 'No valid rotated log paths passed safety verification.' });
+        }
+
+        const chunks = [];
+        for (let i = 0; i < safeFiles.length; i += 100) {
+            chunks.push(safeFiles.slice(i, i + 100).map(_shQuote).join(' '));
+        }
+
+        const rmStatements = chunks.map(argList => `$SUDO rm -f -- ${argList} < /dev/null`).join('\n');
+        const deleteCmd = `
+            SUDO=""
+            if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+                SUDO="sudo -n"
+            fi
+            ${rmStatements}
+            echo "___BCC_DEL_DONE___:$?"
+        `;
+
+        let settled = false;
+        const finish = (payload) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(safetyTimer);
+            socket.emit('delete-old-logs-result', payload);
+        };
+
+        const safetyTimer = setTimeout(() => {
+            finish({ error: 'Delete operation timed out waiting for SSH stream close.' });
+        }, 15000);
+
+        sshClient.exec(deleteCmd, (err, stream) => {
+            if (err) return finish({ error: err.message });
+            let out = '';
+            let errOut = '';
+            stream.on('data', d => { out += d.toString('utf-8'); });
+            stream.stderr.on('data', d => { errOut += d.toString('utf-8'); });
+            stream.on('close', (code) => {
+                const statusMatch = out.match(/___BCC_DEL_DONE___:(\d+)/);
+                const exitCode = statusMatch ? parseInt(statusMatch[1], 10) : (typeof code === 'number' ? code : 0);
+                if (exitCode !== 0) {
+                    return finish({
+                        error: errOut.trim() || `Delete command exited with status ${exitCode}`
+                    });
+                }
+                finish({
+                    success: true,
+                    deletedCount: safeFiles.length
+                });
             });
         });
     });
@@ -1041,7 +1245,7 @@ io.on('connection', (socket) => {
 
     socket.on('docker-action', ({ action, container }) => {
         if (!sshClient || !/^[a-zA-Z0-9_.-]+$/.test(container)) return;
-        let cmd = action === 'start' ? `docker start ${container}` : action === 'stop' ? `docker stop ${container}` : action === 'restart' ? `docker restart ${container}` : action === 'remove' ? `docker rm -f ${container}` : '';
+        let cmd = action === 'start' ? `docker start ${container}` : action === 'stop' ? `docker stop ${container}` : action === 'restart' ? `docker restart ${container}` : action === 'remove' ? `docker rm -f ${container} && (crontab -l 2>/dev/null | grep -vF "# BASTIONCC_RESTART:${container}" | crontab - 2>/dev/null || true)` : '';
         if (cmd) sshClient.exec(cmd, (err, stream) => { if (stream) stream.on('data', d => socket.emit('terminal-data', `\r\n[Docker] ${d.toString()}`)); });
     });
 
@@ -1061,7 +1265,67 @@ io.on('connection', (socket) => {
         });
     });
 
+    // --- INSERT NEW CODE BELOW ---
+    function _closeContainerShellStream() {
+        if (containerShellStream) {
+            try { containerShellStream.write('\x04'); } catch (_) {}
+            try { containerShellStream.end(); } catch (_) {}
+            try { containerShellStream.close(); } catch (_) {}
+            containerShellStream = null;
+        }
+    }
+
+    socket.on('container-shell-start', ({ container, shell, cols, rows }) => {
+        _closeContainerShellStream();
+        if (!sshClient) {
+            return socket.emit('container-shell-data', '\r\n\x1b[31mError: No active host SSH connection.\x1b[0m\r\n');
+        }
+        const cleanContainer = String(container || '').replace(/^\//, '').trim();
+        if (!/^[a-zA-Z0-9_.-]+$/.test(cleanContainer)) {
+            return socket.emit('container-shell-data', '\r\n\x1b[31mError: Invalid container identifier.\x1b[0m\r\n');
+        }
+        const safeShells = ['/bin/bash', '/usr/bin/bash', '/bin/ash', '/usr/bin/ash', '/bin/sh'];
+        const targetShell = safeShells.includes(shell) ? shell : '/bin/sh';
+        const ptyCols = Math.max(20, Math.min(500, parseInt(cols, 10) || 100));
+        const ptyRows = Math.max(5, Math.min(200, parseInt(rows, 10) || 30));
+
+        const cmd = `docker exec -it ${_shQuote(cleanContainer)} ${_shQuote(targetShell)}`;
+        sshClient.exec(cmd, { pty: { term: 'xterm-256color', cols: ptyCols, rows: ptyRows } }, (err, stream) => {
+            if (err) {
+                socket.emit('container-shell-data', `\r\n\x1b[31mFailed to attach container PTY: ${err.message}\x1b[0m\r\n`);
+                socket.emit('container-shell-closed');
+                return;
+            }
+            containerShellStream = stream;
+            socket.emit('container-shell-ready', { container: cleanContainer, shell: targetShell });
+
+            stream.on('data', d => socket.emit('container-shell-data', d.toString('utf-8')));
+            stream.stderr.on('data', d => socket.emit('container-shell-data', d.toString('utf-8')));
+            stream.on('close', () => {
+                if (containerShellStream === stream) containerShellStream = null;
+                socket.emit('container-shell-closed');
+            });
+        });
+    });
+
+    socket.on('container-shell-input', (data) => {
+        if (containerShellStream) {
+            try { containerShellStream.write(data); } catch (_) {}
+        }
+    });
+
+    socket.on('container-shell-resize', ({ cols, rows }) => {
+        if (containerShellStream && cols && rows) {
+            try { containerShellStream.setWindow(rows, cols, 0, 0); } catch (_) {}
+        }
+    });
+
+    socket.on('container-shell-close', () => {
+        _closeContainerShellStream();
+    });
+
     socket.on('connect-ssh', (config) => {
+        _closeContainerShellStream();
         if (sshClient) sshClient.end(); 
         if (statsInterval) clearInterval(statsInterval); if (dockerInterval) clearInterval(dockerInterval);
         activeShellStream = null; sshClient = new Client();
@@ -1145,27 +1409,258 @@ io.on('connection', (socket) => {
                     }, 5000);
                 }
 
+                // --- REPLACE THIS SFTP BLOCK ---
+                function _sftpModeToOctal(mode) {
+                    const m = (Number(mode) || 0) & 0o7777;
+                    return '0' + (m & 0o777).toString(8).padStart(3, '0');
+                }
+
+                function _sftpModeToRwx(mode) {
+                    const m = Number(mode) || 0;
+                    const chars = [
+                        (m & 0o400) ? 'r' : '-',
+                        (m & 0o200) ? 'w' : '-',
+                        (m & 0o100) ? ((m & 0o4000) ? 's' : 'x') : ((m & 0o4000) ? 'S' : '-'),
+                        (m & 0o040) ? 'r' : '-',
+                        (m & 0o020) ? 'w' : '-',
+                        (m & 0o010) ? ((m & 0o2000) ? 's' : 'x') : ((m & 0o2000) ? 'S' : '-'),
+                        (m & 0o004) ? 'r' : '-',
+                        (m & 0o002) ? 'w' : '-',
+                        (m & 0o001) ? ((m & 0o1000) ? 't' : 'x') : ((m & 0o1000) ? 'T' : '-')
+                    ];
+                    return chars.join('');
+                }
+
+                function _normalizeSftpPath(rawPath) {
+                    if (typeof rawPath !== 'string' || rawPath.includes('\0')) return null;
+                    const trimmed = rawPath.trim();
+                    if (!trimmed.startsWith('/')) return null;
+                    return path.posix.normalize(trimmed);
+                }
+
+                const _PROTECTED_SFTP_ROOTS = new Set([
+                    '/', '/bin', '/boot', '/dev', '/etc', '/home', '/lib', '/lib64',
+                    '/media', '/mnt', '/opt', '/proc', '/root', '/run', '/sbin',
+                    '/srv', '/sys', '/tmp', '/usr', '/var'
+                ]);
+
+                function _isProtectedSftpTarget(normPath) {
+                    if (!normPath || _PROTECTED_SFTP_ROOTS.has(normPath)) return true;
+                    return normPath.split('/').filter(Boolean).length < 2;
+                }
+
                 sshClient.sftp((err, sftp) => {
                     if (err) return; sftpSession = sftp;
-                    ['sftp-list', 'sftp-download', 'sftp-upload-start', 'sftp-upload-chunk', 'sftp-upload-end'].forEach(evt => socket.removeAllListeners(evt));
-                    socket.on('sftp-list', (targetPath) => {
+                    const sftpEvents = [
+                        'sftp-list', 'sftp-download', 'sftp-upload-start', 'sftp-upload-chunk', 'sftp-upload-end',
+                        'sftp-read-file', 'sftp-write-file', 'sftp-chmod', 'sftp-preflight-delete', 'sftp-delete'
+                    ];
+                    sftpEvents.forEach(evt => socket.removeAllListeners(evt));
+
+                    socket.on('sftp-list', (payload) => {
+                        const rawPath = (typeof payload === 'object' && payload !== null) ? payload.path : payload;
+                        const pane = (typeof payload === 'object' && payload !== null && payload.pane) ? payload.pane : 'left';
+                        const serverId = (typeof payload === 'object' && payload !== null && payload.serverId) ? payload.serverId : config.id;
+                        const targetPath = _normalizeSftpPath(rawPath) || '/root';
+
                         sftp.readdir(targetPath, (err, list) => {
-                            if (err) return;
-                            const cleanList = list.filter(i => i.filename !== '.' && i.filename !== '..').map(i => ({ name: i.filename, isDir: i.attrs.isDirectory(), size: i.attrs.size })).sort((a, b) => a.isDir === b.isDir ? a.name.localeCompare(b.name) : (a.isDir ? -1 : 1));
-                            socket.emit('sftp-list-data', { path: targetPath, items: cleanList });
+                            if (err) {
+                                return socket.emit('sftp-list-data', { path: targetPath, pane, serverId, items: [], error: err.message });
+                            }
+                            const cleanList = list
+                                .filter(i => i.filename !== '.' && i.filename !== '..')
+                                .map(i => {
+                                    const mode = (i.attrs && typeof i.attrs.mode === 'number') ? i.attrs.mode : 0;
+                                    return {
+                                        name: i.filename,
+                                        isDir: !!(i.attrs && i.attrs.isDirectory()),
+                                        size: (i.attrs && i.attrs.size) || 0,
+                                        mode,
+                                        octal: _sftpModeToOctal(mode),
+                                        rwx: _sftpModeToRwx(mode),
+                                        uid: (i.attrs && typeof i.attrs.uid === 'number') ? i.attrs.uid : 0,
+                                        gid: (i.attrs && typeof i.attrs.gid === 'number') ? i.attrs.gid : 0,
+                                        mtime: (i.attrs && typeof i.attrs.mtime === 'number') ? i.attrs.mtime : 0
+                                    };
+                                })
+                                .sort((a, b) => a.isDir === b.isDir ? a.name.localeCompare(b.name) : (a.isDir ? -1 : 1));
+                            socket.emit('sftp-list-data', { path: targetPath, pane, serverId, items: cleanList });
                         });
                     });
+
+                    socket.on('sftp-read-file', ({ filePath, pane = 'left' }) => {
+                        const normPath = _normalizeSftpPath(filePath);
+                        if (!normPath) return socket.emit('sftp-read-file-result', { error: 'Invalid file path.' });
+
+                        sftp.stat(normPath, (statErr, stats) => {
+                            if (statErr) return socket.emit('sftp-read-file-result', { error: statErr.message });
+                            if (stats.isDirectory()) return socket.emit('sftp-read-file-result', { error: 'Cannot open a directory in the text editor.' });
+                            if (stats.size > 2 * 1024 * 1024) {
+                                return socket.emit('sftp-read-file-result', { error: 'File exceeds 2 MB in-browser editor limit. Use Download instead.' });
+                            }
+
+                            const chunks = [];
+                            const rs = sftp.createReadStream(normPath);
+                            rs.on('data', chunk => chunks.push(Buffer.from(chunk)));
+                            rs.on('error', readErr => socket.emit('sftp-read-file-result', { error: readErr.message }));
+                            rs.on('end', () => {
+                                const buf = Buffer.concat(chunks);
+                                if (buf.includes(0)) {
+                                    return socket.emit('sftp-read-file-result', { error: 'Binary file detected. Use Download instead.' });
+                                }
+                                socket.emit('sftp-read-file-result', {
+                                    success: true,
+                                    pane,
+                                    filePath: normPath,
+                                    content: buf.toString('utf8'),
+                                    mode: stats.mode,
+                                    octal: _sftpModeToOctal(stats.mode),
+                                    size: stats.size
+                                });
+                            });
+                        });
+                    });
+
+                    socket.on('sftp-write-file', ({ filePath, content, originalMode, pane = 'left' }) => {
+                        const normPath = _normalizeSftpPath(filePath);
+                        if (!normPath || typeof content !== 'string') {
+                            return socket.emit('sftp-write-file-result', { error: 'Invalid file path or content payload.' });
+                        }
+
+                        const ws = sftp.createWriteStream(normPath, { flags: 'w' });
+                        ws.on('error', writeErr => socket.emit('sftp-write-file-result', { error: writeErr.message }));
+                        ws.on('close', () => {
+                            const permBits = (typeof originalMode === 'number') ? (originalMode & 0o7777) : 0;
+                            if (permBits > 0) {
+                                sftp.chmod(normPath, permBits, () => {
+                                    socket.emit('sftp-write-file-result', { success: true, pane, filePath: normPath });
+                                });
+                            } else {
+                                socket.emit('sftp-write-file-result', { success: true, pane, filePath: normPath });
+                            }
+                        });
+                        ws.end(Buffer.from(content, 'utf8'));
+                    });
+
+                    socket.on('sftp-chmod', ({ paths, modeOctal, recursive = false, pane = 'left' }) => {
+                        if (!Array.isArray(paths) || paths.length === 0) {
+                            return socket.emit('sftp-chmod-result', { error: 'No target paths selected.' });
+                        }
+                        const cleanOctal = String(modeOctal || '').trim();
+                        if (!/^0?[0-7]{3,4}$/.test(cleanOctal)) {
+                            return socket.emit('sftp-chmod-result', { error: 'Invalid octal permission mask.' });
+                        }
+                        const modeInt = parseInt(cleanOctal, 8);
+                        const safePaths = paths.map(_normalizeSftpPath).filter(p => p && p !== '/');
+                        if (safePaths.length === 0) {
+                            return socket.emit('sftp-chmod-result', { error: 'Invalid or protected target path.' });
+                        }
+
+                        if (recursive) {
+                            const octalArg = '0' + (modeInt & 0o7777).toString(8).padStart(3, '0');
+                            const quotedArgs = safePaths.map(_shQuote).join(' ');
+                            const cmd = `chmod -R ${octalArg} -- ${quotedArgs} < /dev/null && echo "___BCC_CHMOD_OK___"`;
+                            sshClient.exec(cmd, (execErr, stream) => {
+                                if (execErr) return socket.emit('sftp-chmod-result', { error: execErr.message });
+                                let out = '';
+                                let errOut = '';
+                                stream.on('data', d => { out += d.toString('utf8'); });
+                                stream.stderr.on('data', d => { errOut += d.toString('utf8'); });
+                                stream.on('close', (code) => {
+                                    if (code !== 0 || !out.includes('___BCC_CHMOD_OK___')) {
+                                        return socket.emit('sftp-chmod-result', { error: errOut.trim() || `chmod exited with code ${code}` });
+                                    }
+                                    socket.emit('sftp-chmod-result', { success: true, pane, count: safePaths.length });
+                                });
+                            });
+                        } else {
+                            let idx = 0;
+                            const next = () => {
+                                if (idx >= safePaths.length) {
+                                    return socket.emit('sftp-chmod-result', { success: true, pane, count: safePaths.length });
+                                }
+                                const target = safePaths[idx++];
+                                sftp.chmod(target, modeInt, (chErr) => {
+                                    if (chErr) return socket.emit('sftp-chmod-result', { error: `${target}: ${chErr.message}` });
+                                    next();
+                                });
+                            };
+                            next();
+                        }
+                    });
+
+                    socket.on('sftp-preflight-delete', ({ paths, pane = 'left' }) => {
+                        if (!Array.isArray(paths) || paths.length === 0) {
+                            return socket.emit('sftp-preflight-delete-result', { nestedCount: 0, pane });
+                        }
+                        const safePaths = paths.map(_normalizeSftpPath).filter(p => p && !_isProtectedSftpTarget(p));
+                        if (safePaths.length === 0) {
+                            return socket.emit('sftp-preflight-delete-result', { nestedCount: 0, pane });
+                        }
+                        const quotedArgs = safePaths.map(_shQuote).join(' ');
+                        const cmd = `find ${quotedArgs} -mindepth 1 2>/dev/null | wc -l`;
+                        sshClient.exec(cmd, (execErr, stream) => {
+                            if (execErr) return socket.emit('sftp-preflight-delete-result', { nestedCount: 0, pane });
+                            let out = '';
+                            stream.on('data', d => { out += d.toString('utf8'); });
+                            stream.stderr.on('data', () => {});
+                            stream.on('close', () => {
+                                const nestedCount = parseInt(out.trim(), 10) || 0;
+                                socket.emit('sftp-preflight-delete-result', { nestedCount, pane });
+                            });
+                        });
+                    });
+
+                    socket.on('sftp-delete', ({ paths, pane = 'left' }) => {
+                        if (!Array.isArray(paths) || paths.length === 0) {
+                            return socket.emit('sftp-delete-result', { error: 'No files or folders selected for deletion.' });
+                        }
+
+                        const normalized = paths.map(_normalizeSftpPath);
+                        if (normalized.some(p => !p || _isProtectedSftpTarget(p))) {
+                            return socket.emit('sftp-delete-result', { error: 'Blocked: Protected system root directory cannot be deleted.' });
+                        }
+
+                        const uniquePaths = Array.from(new Set(normalized));
+                        const quotedArgs = uniquePaths.map(_shQuote).join(' ');
+                        const cmd = `rm -rf -- ${quotedArgs} < /dev/null && echo "___BCC_SFTP_DEL_OK___"`;
+
+                        sshClient.exec(cmd, (execErr, stream) => {
+                            if (execErr) return socket.emit('sftp-delete-result', { error: execErr.message });
+                            let out = '';
+                            let errOut = '';
+                            stream.on('data', d => { out += d.toString('utf8'); });
+                            stream.stderr.on('data', d => { errOut += d.toString('utf8'); });
+                            stream.on('close', (code) => {
+                                if (code !== 0 || !out.includes('___BCC_SFTP_DEL_OK___')) {
+                                    return socket.emit('sftp-delete-result', { error: errOut.trim() || `Delete failed (exit code ${code})` });
+                                }
+                                socket.emit('sftp-delete-result', { success: true, deletedCount: uniquePaths.length, pane });
+                            });
+                        });
+                    });
+
                     socket.on('sftp-download', (filePath) => {
-                        const readStream = sftp.createReadStream(filePath);
-                        readStream.on('data', chunk => socket.emit('sftp-download-chunk', { filePath, chunk }));
-                        readStream.on('end', () => socket.emit('sftp-download-complete', filePath));
+                        const normPath = _normalizeSftpPath(filePath);
+                        if (!normPath) return;
+                        const readStream = sftp.createReadStream(normPath);
+                        readStream.on('data', chunk => socket.emit('sftp-download-chunk', { filePath: normPath, chunk }));
+                        readStream.on('end', () => socket.emit('sftp-download-complete', normPath));
                     });
                     socket.on('sftp-upload-start', ({ remotePath }) => {
-                        const writeStream = sftp.createWriteStream(remotePath); activeUploads.set(remotePath, writeStream);
-                        writeStream.on('close', () => { socket.emit('sftp-upload-complete', remotePath); activeUploads.delete(remotePath); });
+                        const normPath = _normalizeSftpPath(remotePath);
+                        if (!normPath) return;
+                        const writeStream = sftp.createWriteStream(normPath); activeUploads.set(normPath, writeStream);
+                        writeStream.on('close', () => { socket.emit('sftp-upload-complete', normPath); activeUploads.delete(normPath); });
                     });
-                    socket.on('sftp-upload-chunk', ({ remotePath, chunk }) => { if (activeUploads.has(remotePath)) activeUploads.get(remotePath).write(Buffer.from(chunk)); });
-                    socket.on('sftp-upload-end', ({ remotePath }) => { if (activeUploads.has(remotePath)) activeUploads.get(remotePath).end(); });
+                    socket.on('sftp-upload-chunk', ({ remotePath, chunk }) => {
+                        const normPath = _normalizeSftpPath(remotePath);
+                        if (normPath && activeUploads.has(normPath)) activeUploads.get(normPath).write(Buffer.from(chunk));
+                    });
+                    socket.on('sftp-upload-end', ({ remotePath }) => {
+                        const normPath = _normalizeSftpPath(remotePath);
+                        if (normPath && activeUploads.has(normPath)) activeUploads.get(normPath).end();
+                    });
                 });
             }).on('keyboard-interactive', (name, instructions, instructionsLang, prompts, finish) => {
                 socket.emit('ssh-keyboard-interactive', { id: config.id, name, instructions, prompts });
@@ -1178,11 +1673,14 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-            if (typeof sftpUnlockUi === 'function') sftpUnlockUi();
-            if (typeof activeDownloadToast !== 'undefined' && activeDownloadToast) { activeDownloadToast.remove(); activeDownloadToast = null; }
+        _closeContainerShellStream();
+        if (typeof sftpUnlockUi === 'function') sftpUnlockUi();
+        if (typeof activeDownloadToast !== 'undefined' && activeDownloadToast) { activeDownloadToast.remove(); activeDownloadToast = null; }
         if (statsInterval) clearInterval(statsInterval); if (dockerInterval) clearInterval(dockerInterval);
         if (sshClient) sshClient.end(); activeUploads.clear(); activePins.delete(socket.id);
     });
+
+    // --- BOTTOM ANCHOR (KEEP AS-IS) ---
 });
 
 const PORT = process.env.PORT || 3000;
@@ -2636,6 +3134,144 @@ app.post('/api/docker/recreate/:depId/decision', (req, res) => {
   }
   dep.overrideResolve(req.body && req.body.decision === 'proceed');
   res.json({ ok: true });
+});
+
+// ============================================================================
+// SCHEDULED CONTAINER RESTARTS (HOST CRONTAB MANAGER)
+// ============================================================================
+function _validateCronExpression(expr) {
+  const clean = String(expr || '').trim().replace(/\s+/g, ' ');
+  const parts = clean.split(' ');
+  if (parts.length !== 5) return { valid: false, error: 'Cron expression must have exactly 5 fields (min hour day month weekday).' };
+
+  const bounds = [
+    { name: 'Minute', min: 0, max: 59 },
+    { name: 'Hour', min: 0, max: 23 },
+    { name: 'Day of Month', min: 1, max: 31 },
+    { name: 'Month', min: 1, max: 12 },
+    { name: 'Day of Week', min: 0, max: 7 }
+  ];
+
+  const fieldRegex = /^(\*|[0-9]{1,2}(-[0-9]{1,2})?(\/[0-9]{1,2})?|\*\/[0-9]{1,2})(,(\*|[0-9]{1,2}(-[0-9]{1,2})?(\/[0-9]{1,2})?|\*\/[0-9]{1,2}))*$/;
+
+  for (let i = 0; i < 5; i++) {
+    const field = parts[i];
+    const b = bounds[i];
+    if (!fieldRegex.test(field)) {
+      return { valid: false, error: `Invalid syntax in ${b.name} field ("${field}").` };
+    }
+    const nums = field.match(/[0-9]+/g) || [];
+    for (const nStr of nums) {
+      const n = parseInt(nStr, 10);
+      if (field.includes('/' + nStr) && n === 0) {
+        return { valid: false, error: `Step interval cannot be 0 in ${b.name} field.` };
+      }
+      if (!field.includes('/' + nStr) && (n < b.min || n > b.max)) {
+        return { valid: false, error: `${b.name} value ${n} is out of range (${b.min}-${b.max}).` };
+      }
+    }
+  }
+
+  return { valid: true, cron: clean };
+}
+
+app.get('/api/docker/schedules', async (req, res) => {
+  try {
+    const ssh = _resolveSsh();
+    if (!ssh) return res.status(400).json({ error: 'No active SSH session detected.' });
+
+    const probeCmd = 'date +"%Z (%z) — %H:%M" 2>/dev/null; echo "___BCC_CRON_SEP___"; crontab -l 2>/dev/null || true';
+    const raw = await _bccDockerExec(ssh, probeCmd);
+    const [hostTimePart, cronPart] = raw.split('___BCC_CRON_SEP___');
+    const hostTime = (hostTimePart || '').trim() || 'Unknown';
+    const schedules = {};
+
+    (cronPart || '').split('\n').forEach(line => {
+      const trimmed = line.trim();
+      const markerIdx = trimmed.indexOf('# BASTIONCC_RESTART:');
+      if (markerIdx !== -1 && !trimmed.startsWith('#')) {
+        const containerName = trimmed.slice(markerIdx + '# BASTIONCC_RESTART:'.length).trim();
+        const tokens = trimmed.split(/\s+/);
+        if (tokens.length >= 6 && _isValidContainerId(containerName)) {
+          schedules[containerName] = {
+            cron: tokens.slice(0, 5).join(' ')
+          };
+        }
+      }
+    });
+
+    res.json({ success: true, schedules, hostTime });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/docker/schedules/:id', async (req, res) => {
+  try {
+    const containerId = String(req.params.id || '').replace(/^\//, '').trim();
+    if (!_isValidContainerId(containerId)) {
+      return res.status(400).json({ error: 'Invalid container identifier format.' });
+    }
+
+    const check = _validateCronExpression(req.body && req.body.cron);
+    if (!check.valid) {
+      return res.status(400).json({ error: check.error });
+    }
+
+    const ssh = _resolveSsh();
+    if (!ssh) return res.status(400).json({ error: 'No active SSH session detected.' });
+
+    const marker = `# BASTIONCC_RESTART:${containerId}`;
+    const qMarker = _shQuote(marker);
+    const qContainer = _shQuote(containerId);
+    const qCron = _shQuote(check.cron);
+
+    const updateCmd = `
+      if ! command -v crontab >/dev/null 2>&1; then
+        echo "crontab utility is not installed on this host." >&2
+        exit 1
+      fi
+      DOCKER_BIN=$(command -v docker 2>/dev/null || echo "/usr/bin/docker")
+      NEW_ENTRY=${qCron}" $DOCKER_BIN restart "${qContainer}" >/dev/null 2>&1 "${qMarker}
+      { crontab -l 2>/dev/null | grep -vF ${qMarker} || true; echo "$NEW_ENTRY"; } | crontab -
+    `;
+
+    await _runSshCmd(ssh, updateCmd);
+    res.json({ success: true, container: containerId, cron: check.cron });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/docker/schedules/:id', async (req, res) => {
+  try {
+    const containerId = String(req.params.id || '').replace(/^\//, '').trim();
+    if (!_isValidContainerId(containerId)) {
+      return res.status(400).json({ error: 'Invalid container identifier format.' });
+    }
+
+    const ssh = _resolveSsh();
+    if (!ssh) return res.status(400).json({ error: 'No active SSH session detected.' });
+
+    const marker = `# BASTIONCC_RESTART:${containerId}`;
+    const qMarker = _shQuote(marker);
+    const removeCmd = `
+      EXISTING=$(crontab -l 2>/dev/null || true)
+      if [ -n "$EXISTING" ]; then
+        FILTERED=$(printf '%s\n' "$EXISTING" | grep -vF ${qMarker} || true)
+        if [ -z "$FILTERED" ]; then
+          crontab -r 2>/dev/null || printf '' | crontab -
+        else
+          printf '%s\n' "$FILTERED" | crontab -
+        fi
+      fi
+    `;
+
+    await _runSshCmd(ssh, removeCmd);
+    res.json({ success: true, container: containerId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 /* BASTIONCC_V198_BACKEND_END */
 
