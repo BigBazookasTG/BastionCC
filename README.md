@@ -36,6 +36,11 @@
      - Check GCHR/Docker.io & Private repos
      - Click on tag to auto update tag field & Click update to confirm
    ~~~
+      From V2.0:
+     - Modal exec for containers, no longer switches to terminal tab
+     - Set restart policy per container if needed injects into crontab
+     - convert Docker run to Docker compose
+   
   
 ### Create "Macros" i.e command shortcuts you may use often, these will appear above the xterm terminal window and import Macro templates from your other servers to save having to recreate
   ![picture](/images/quickcommandsbcc.png)
@@ -46,6 +51,7 @@
     - Folders (system scans folder and displays the button as a drop down list to select)
     - Systemd / Journalctl (Enter the term you would like to isolate i.e UFW)
     - Clone preset logs to other servers
+
     
   ![picture](/images/quickcommandsbcc.png)
   
@@ -58,10 +64,21 @@
   - WHOIS Lookup
   - Threat Detection Score (Local or via AbuseIPDB)
   - Ban Actions (Single IP or /24) Via Crowdsec > Fail2ban > Firewall
+
+Version 2.0+
+  - Clean rotated logs in /var/log and user added paths
+  - Checks security threats in logs and ignores those already banned.
+
   
 ### SFTP file management with drag and drop ability to transfer files.
     
  ![picture](/images/filebrowser.png)
+
+Version 2.0+
+  - Permissions Viewer and Editor
+  - Multi Select (delete and download)
+  - Modal file editor with script format highlighting (python, bash, json, yaml etc)
+
     
 ### Emergency lock out button for the paranoid aka me, click this and the system kills all sessions, removes pubkey salted hashes and logs you out.
 ### Dark and Light theme of course.
@@ -81,31 +98,16 @@ visit localhost:3000 or 127.0.0.1:3000
 
 ## Security Approach
 
+Code is created initially via Gemini pro models with security placed as ultimate priority for the persona.
+
+I then parse the code via various models in my olama instance for quick find issues specific, the tweaks are rerun via gemini until the release is ready.
+
+The complete scripts are then passed through Claude which highlights remaining vulnerabilities. Gemini implements the patches until Claude passes all issues as clean
+
+The code is then updated on this Github and scanned upon saving. Any recommendations from CODEQL get passed back to Gemini to review.
+
+Once the patches are applied the code is then parsed again through Claude and we repeat until no more issues are found by the models. Then:
+
 ### The code is here for all to see, I am no code or security expert and do not pretend to be, so cast your eye over the code and judge for yourself
 
-The build.SH file is audited by both Claude and Gemini AI  each major version for weaknesses, then the measures to circumvent are implemented to mitigate possible risks, however it should be noted i am deploying on my laptop locally, i would not recommend deploying as a cloud based tool.
-
-
-### Summary Claude - 2nd September 2026 - V1.9.x
-
-I reviewed the full diff (the new pasted-private-key feature, the deep-scan report generation, and re-checked all the previously fixed spots to make sure nothing regressed under the new code). 
-
-Everything holds up:
-
-mode allowlist in block-threat — still enforced, still correct.
-
-Key-path validation — actually improved this round. It's now consolidated into one resolvePrivateKey() helper used identically by connect-ssh, the security-scan pivot, and the run-deep-scan pivot, so there's no longer three copies of the logic to keep in sync — just one. That's a better structural fix than what I asked for.
-
-New pasted-key feature (encryptedPrivateKey) — the raw key content is encrypted with the PIN immediately in the save-server handler and delete serverData.privateKey happens before the write to disk, so plaintext key material never touches servers.json. Same careful handling as the existing passphrase encryption.
-
-Deep-scan report — all dynamic values (nmapOut, fwResult, ban history entries, domain audit output) go through escapeHtmlForReport() before being embedded in the generated HTML, and it's rendered in ordinary element content, not inline event handlers, so no XSS class issue there.
-Docker/nmap/curl/ssl sanitization — unchanged, still correctly allowlisted.
-
-One very minor (non-security) note, not worth blocking on: connect-ssh re-registers the sftp-list/sftp-download/sftp-upload-* listeners on the socket every time it runs, without removing prior ones first. If a single browser session connects to multiple servers in sequence without a page reload, you'll accumulate duplicate listeners and each SFTP action could fire multiple times. Worth a socket.removeAllListeners('sftp-list') etc. at the top of the sshClient.sftp() callback if you ever notice duplicate SFTP events, but it's a correctness nit, not a vulnerability.
-
-Nothing else stood out. This is in good shape — the security posture across all the rounds we've done has held together well as the feature set grew.
-
-Patched
-
-That's exactly the fix — removeAllListeners for all five SFTP event names is now called before re-registering them on each connect-ssh, so switching servers within one session no longer stacks duplicate handlers.
 
