@@ -1,11 +1,45 @@
 [
   {
-      "version": "v1.9.8.34",
-      "date": "November 2026",
-      "badge": "CURRENT RELEASE",
-      "borderColor": "border-emerald-500",
-      "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-      "title": "Synchronous Crash Telemetry & Strict Compose Exit-Code Trapping",
+    "version": "v2.0.0",
+    "date": "November 2026",
+    "badge": "CURRENT RELEASE",
+    "borderColor": "border-emerald-500",
+    "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+    "title": "BastionCC 2.0: Full SFTP Suite, Isolated Container PTY, Scheduled Restarts & Log Cleaner",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Full SFTP File Manager Suite: Added in-browser line-numbered syntax editor with live JSON/YAML validation, multi-select checkboxes with ultra-confirmed delete, inline chmod permissions inspector, and Open Terminal Here."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Isolated Container Terminal Modal: Dedicated 78% x 80% xterm.js modal backed by an independent SSH exec PTY stream, keeping container shells completely separate from the main host terminal."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Scheduled Container Restarts: Host-side crontab scheduler with remote timezone display, quick presets, live plain-English cron parsing, and automatic cleanup on container deletion."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Two-Stage Rotated Log Cleaner: Added Safe Scan and Delete Old Logs workflow across /var/log and custom server log directories with reclaimable byte calculation."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Export Container as Compose: Read-only YAML preview modal inside Container Edit with one-click clipboard copy and docker-compose.yml download."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "CIDR-Aware Threat Rescanning: Upgraded log threat triage with 32-bit subnet bitmasking against active CrowdSec, Fail2ban, host firewall rules, and the persistent ban ledger."
+      }
+    ]
+  },
+  {
+    "version": "v1.9.8.34",
+    "date": "November 2026",
+    "badge": "STABLE",
+    "borderColor": "border-blue-500",
+    "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+    "title": "Synchronous Crash Telemetry & Strict Compose Exit-Code Trapping",
       "changes": [
         {
           "tag": "STABILITY",
