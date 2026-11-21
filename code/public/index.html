@@ -519,7 +519,7 @@
             <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
             <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
                 <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
-                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v1.9.8.34 Changelog</span></div>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v2.0 Changelog</span></div>
             </div>
         </div>
     </nav>
@@ -584,8 +584,59 @@
                     <p class="text-sm text-slate-300">Files will upload directly to current directory</p>
                   </div>
                 </div>
-                <div class="text-sm border-b border-slate-200 dark:border-slate-800 pb-2 mb-2 flex space-x-2"><button id="btn-sftp-up" class="px-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition rounded font-semibold text-xs">UP</button><span id="sftp-path" class="font-mono text-slate-500 py-1">/root</span></div>
-                <div id="sftp-grid" class="flex-1 overflow-y-auto transition-opacity duration-200"></div>
+
+                <!-- --- REPLACE THIS TOOLBAR & GRID SECTION --- -->
+                <div class="text-sm border-b border-slate-200 dark:border-slate-800 pb-2.5 mb-2 flex items-center justify-between gap-2 flex-wrap">
+                  <div class="flex items-center space-x-2 min-w-0 flex-1">
+                    <button id="btn-sftp-up" class="px-2.5 py-1 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition rounded font-semibold text-xs shrink-0">UP</button>
+                    <div id="sftp-path" class="font-mono text-slate-500 py-0.5 truncate">/root</div>
+                  </div>
+                  <div class="flex items-center space-x-2 shrink-0">
+                    <button type="button" onclick="SftpExplorer.refresh()" title="Refresh Directory" class="px-2.5 py-1 rounded-[10px] text-xs font-semibold bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition flex items-center gap-1">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                      <span>Refresh</span>
+                    </button>
+                    <button type="button" id="btn-sftp-open-term" onclick="SftpExplorer.openTerminalHere()" title="Open Host Terminal in Current Directory" class="px-3 py-1 rounded-[10px] text-xs font-semibold border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500 text-orange-400 hover:text-white transition flex items-center gap-1.5">
+                      <span class="font-mono font-bold">&gt;_</span>
+                      <span>Open Terminal Here</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Multi-Select Bulk Action Bar -->
+                <div id="sftp-bulk-bar" class="hidden mb-2 px-3 py-2 rounded-[10px] bg-orange-500/10 border border-orange-500/35 flex items-center justify-between gap-2 text-xs">
+                  <div class="flex items-center gap-2.5">
+                    <span class="w-2 h-2 rounded-full bg-orange-500"></span>
+                    <span id="sftp-bulk-count" class="font-mono font-bold text-orange-400">0 selected</span>
+                    <button type="button" onclick="SftpExplorer.clearSelection()" class="text-[11px] text-slate-400 hover:text-white underline">Clear</button>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button type="button" id="btn-sftp-bulk-download" onclick="SftpExplorer.downloadSelected()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold transition">
+                      Download
+                    </button>
+                    <button type="button" onclick="SftpExplorer.openChmodSelected()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-orange-500/20 text-orange-300 border border-orange-500/30 font-semibold transition">
+                      Chmod
+                    </button>
+                    <button type="button" onclick="SftpExplorer.promptDeleteSelected()" class="px-2.5 py-1 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/40 font-bold transition">
+                      Delete Selected
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Column Header with Master Select-All Checkbox -->
+                <div class="flex items-center justify-between px-2 py-1.5 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-400 select-none">
+                  <div class="flex items-center space-x-2.5 min-w-0 flex-1">
+                    <input type="checkbox" id="sftp-select-all" onchange="SftpExplorer.toggleSelectAll(this.checked)" class="rounded bg-slate-800 border-slate-600 text-orange-500 focus:ring-orange-500/40 cursor-pointer" title="Select All">
+                    <span>Name</span>
+                  </div>
+                  <div class="flex items-center space-x-4 shrink-0">
+                    <span class="w-28 text-center">Permissions</span>
+                    <span class="w-20 text-right">Size</span>
+                    <span class="w-20 text-right">Actions</span>
+                  </div>
+                </div>
+
+                <div id="sftp-grid" class="flex-1 overflow-y-auto transition-opacity duration-200 divide-y divide-slate-100 dark:divide-slate-800/50"></div>
                 <!-- SFTP Upload Progress Bar (Docked Bottom Strip) -->
                 <div id="sftp-upload-progress" class="hidden mt-2 p-2.5 rounded-lg border border-orange-500/30 bg-orange-500/5 dark:bg-slate-900/90 shadow-lg">
                   <div class="flex items-center justify-between text-xs mb-1.5">
@@ -608,6 +659,10 @@
                 <div class="flex justify-between items-center mb-2 space-x-4 border-b border-slate-200 dark:border-slate-800 pb-3 flex-wrap gap-y-2">
                     <div id="log-buttons" class="flex space-x-2 overflow-visible items-center"></div>
                     <div class="flex items-center space-x-2 shrink-0">
+                        <button id="btn-clean-logs" onclick="LogCleaner.handleClick()" class="flex items-center space-x-2 px-3 py-1.5 text-xs font-semibold rounded-[10px] border border-accent bg-transparent text-slate-600 dark:text-slate-300 hover:border-accent hover:bg-accent/10 hover:text-accent dark:hover:text-white transition-all shadow-sm">
+                            <svg class="w-3.5 h-3.5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            <span>Clean Logs</span>
+                        </button>
                         <button id="btn-scan-threats" onclick="scanCurrentLogForThreats()" class="flex items-center space-x-2 px-3 py-1.5 text-xs font-semibold rounded-[10px] border border-accent bg-transparent text-slate-600 dark:text-slate-300 hover:border-accent hover:bg-accent/10 hover:text-accent dark:hover:text-white transition-all shadow-sm">
                             <svg class="w-3.5 h-3.5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                             <span>Scan for Threats</span>
@@ -1337,6 +1392,8 @@
                 if (e.key === 'Escape' && !document.getElementById('defense-modal').classList.contains('hidden')) closeDefenseModal();
                 if (e.key === 'Escape' && !document.getElementById('abuseipdb-modal').classList.contains('hidden')) closeAbuseIpDbModal();
                 if (e.key === 'Escape' && !document.getElementById('threat-map-modal').classList.contains('hidden')) closeThreatMapModal();
+                if (e.key === 'Escape' && window.ScheduleRestartManager) ScheduleRestartManager.close();
+                if (e.key === 'Escape' && typeof closeExportComposeModal === 'function') closeExportComposeModal();
             });
 
             socket.on('ssh-keyboard-interactive', (data) => {
@@ -1352,6 +1409,9 @@
             term.onData(data => socket.emit('terminal-input', data));
             socket.on('terminal-data', data => term.write(data)); 
             socket.on('modal-data', data => modalTerm.write(maskDemoText(data)));
+            socket.on('container-shell-data', data => { if (window.ContainerTerminalModal) ContainerTerminalModal.write(data); });
+            socket.on('container-shell-ready', info => { if (window.ContainerTerminalModal) ContainerTerminalModal.onReady(info); });
+            socket.on('container-shell-closed', () => { if (window.ContainerTerminalModal) ContainerTerminalModal.onClosed(); });
             
             socket.on('security-data', data => { 
                 const cleanData = maskDemoText(data);
@@ -1404,6 +1464,8 @@
             socket.on('log-threats-result', handleLogThreatsResult);
             socket.on('block-threat-result', handleBlockThreatResult);
             socket.on('whois-result', handleWhoisResult);
+            socket.on('scan-old-logs-result', (data) => { if (window.LogCleaner) LogCleaner.onScanResult(data); });
+            socket.on('delete-old-logs-result', (data) => { if (window.LogCleaner) LogCleaner.onDeleteResult(data); });
 
             // Server telemetry listener with enhanced RAM formatting and live dynamic CPU tick calculation
             socket.on('server-stats', data => {
@@ -1436,6 +1498,11 @@
             socket.on('ssh-status', (data) => { document.querySelectorAll('.srv-indicator').forEach(el => { el.classList.add('hidden'); el.classList.remove('anim-connected'); }); const ind = document.getElementById('ind-' + data.id); if (ind) { ind.classList.remove('hidden'); ind.classList.add('anim-connected'); } switchTab('terminal'); term.focus(); });
             
             socket.on('sftp-list-data', renderSftpGrid);
+            socket.on('sftp-read-file-result', (res) => { if (window.SftpEditorModal) SftpEditorModal.onFileLoaded(res); });
+            socket.on('sftp-write-file-result', (res) => { if (window.SftpEditorModal) SftpEditorModal.onFileSaved(res); });
+            socket.on('sftp-chmod-result', (res) => { if (window.SftpChmodModal) SftpChmodModal.onComplete(res); });
+            socket.on('sftp-preflight-delete-result', (res) => { if (window.SftpDeleteModal) SftpDeleteModal.onPreflight(res); });
+            socket.on('sftp-delete-result', (res) => { if (window.SftpDeleteModal) SftpDeleteModal.onComplete(res); });
             socket.on('sftp-download-chunk', ({chunk}) => downloadedChunks.push(new Uint8Array(chunk)));
             socket.on('sftp-download-complete', (filePath) => {
                 if (activeDownloadToast) { activeDownloadToast.remove(); activeDownloadToast = null; }
@@ -1489,6 +1556,7 @@
         }
 
         function fetchLog(type, path) {
+            if (window.LogCleaner) LogCleaner.reset();
             activeLogSource = { type, path };
             logTerm.clear(); logTerm.writeln(`\x1b[36mFetching [${type}]: ${maskDemoText(path)}...\x1b[0m\r\n`);
             socket.emit('fetch-server-log', { type, path });
@@ -1751,6 +1819,17 @@
                         <button data-action="start" data-container="${escapeHtml(p.Names)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 hover:bg-emerald-500 hover:text-white transition"><svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path></svg></button>
                         <button data-action="stop" data-container="${escapeHtml(p.Names)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 hover:bg-amber-500 hover:text-white transition"><svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button>
                         <button data-action="restart" data-container="${escapeHtml(p.Names)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 hover:bg-blue-500 hover:text-white transition"><svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg></button>
+                        ${(() => {
+                            const sched = window.__dockerSchedules && window.__dockerSchedules[p.Names];
+                            const isScheduled = !!(sched && sched.cron);
+                            const tip = isScheduled
+                                ? `Scheduled Restart: ${window.ScheduleRestartManager ? ScheduleRestartManager.describeCron(sched.cron).text : sched.cron} (${sched.cron})`
+                                : 'Schedule Container Restart';
+                            const btnCls = isScheduled
+                                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40 hover:bg-orange-500 hover:text-white'
+                                : 'bg-slate-200 dark:bg-slate-700 hover:bg-orange-500 hover:text-white';
+                            return `<button data-action="schedule" data-container="${escapeHtml(p.Names)}" title="${escapeHtml(tip)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded ${btnCls} transition"><svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button>`;
+                        })()}
                         <span class="inline-block w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1"></span>
                         <button data-action="console" data-container="${escapeHtml(p.Names)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 hover:bg-indigo-500 hover:text-white transition font-mono text-xs font-bold leading-none">>_</button>
                         <button data-action="logs" data-container="${escapeHtml(p.Names)}" class="docker-btn flex items-center justify-center w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 hover:bg-purple-500 hover:text-white transition"><svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></button>
@@ -1795,6 +1874,7 @@
                 else if (a === 'scan') scanDocker(i);
                 else if (a === 'edit') openEditModal(c);
                 else if (a === 'remove') openDeleteModal(c);
+                else if (a === 'schedule') ScheduleRestartManager.open(c);
                 else {
                     window.__pendingDocker[c] = { action: a, time: Date.now() };
                     applyDockerPending(c, a, btn);
@@ -1820,25 +1900,14 @@
         function viewLogs(c) { document.getElementById('diag-title').innerText = `Logs: ${maskDemoText(c)}`; document.getElementById('diagnostics-modal').classList.remove('hidden'); modalTerm.clear(); setTimeout(() => { try { modalFitAddon.fit(); } catch(e){} }, 150); socket.emit('docker-logs', { container: c }); }
         function scanDocker(i) { document.getElementById('diag-title').innerText = `Grype Scan: ${maskDemoText(i)}`; document.getElementById('diagnostics-modal').classList.remove('hidden'); modalTerm.clear(); setTimeout(() => { try { modalFitAddon.fit(); } catch(e){} }, 150); socket.emit('docker-scan', { image: i }); }
         function closeDiagnostics() { document.getElementById('diagnostics-modal').classList.add('hidden'); }
-        async function execDocker(c) {
-            switchTab('terminal');
-            term.focus();
-            let shell = '/bin/sh';
-            try {
-                const headers = {};
-                if (typeof authToken !== 'undefined' && authToken) headers['Authorization'] = 'Bearer ' + authToken;
-                const res = await fetch('/api/docker/containers/' + encodeURIComponent(c) + '/probe-shell', { headers });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data && data.shell) shell = data.shell;
-                }
-            } catch (err) {
-                console.warn('Probe shell fallback to /bin/sh:', err);
+        function execDocker(c) {
+            if (window.ContainerTerminalModal) {
+                ContainerTerminalModal.open(c);
             }
-            socket.emit('terminal-input', 'docker exec -it ' + c + ' ' + shell + '\r');
         }
 
         function switchTab(tab) {
+            if (tab !== 'logs' && window.LogCleaner) LogCleaner.reset();
             const _cab = document.getElementById('container-actions-bar'); if (_cab) { _cab.classList.add('hidden'); _cab.classList.remove('flex'); }
             document.getElementById('view-add-server').classList.add('hidden');
             document.getElementById('macro-buttons').classList.add('hidden');
@@ -1846,8 +1915,8 @@
             const actCls = "text-sm font-semibold text-accent border-b-2 border-accent pb-1 transition-colors";
             if(tab === 'terminal') { document.getElementById('view-terminal').classList.remove('hidden'); document.getElementById('tab-terminal').className = actCls; document.getElementById('macro-buttons').classList.remove('hidden'); if(term) setTimeout(() => { try { fitAddon.fit(); } catch(e){} }, 50); } 
             else if (tab === 'files') { document.getElementById('view-files').classList.remove('hidden'); document.getElementById('view-files').classList.add('flex'); document.getElementById('tab-files').className = actCls; socket.emit('sftp-list', currentSftpPath); } 
-            else if (tab === 'docker') { document.getElementById('view-docker').classList.remove('hidden'); document.getElementById('view-docker').classList.add('flex'); document.getElementById('tab-docker').className = actCls; if (_cab) { _cab.classList.remove('hidden'); _cab.classList.add('flex'); } } 
-            else if (tab === 'logs') { document.getElementById('view-logs').classList.remove('hidden'); document.getElementById('view-logs').classList.add('flex'); document.getElementById('tab-logs').className = actCls; if(logTerm) setTimeout(() => { try { logFitAddon.fit(); } catch(e){} }, 50); } 
+            else if (tab === 'docker') { document.getElementById('view-docker').classList.remove('hidden'); document.getElementById('view-docker').classList.add('flex'); document.getElementById('tab-docker').className = actCls; if (_cab) { _cab.classList.remove('hidden'); _cab.classList.add('flex'); } if (window.ScheduleRestartManager) ScheduleRestartManager.refresh(); } 
+            else if (tab === 'logs') { document.getElementById('view-logs').classList.remove('hidden'); document.getElementById('view-logs').classList.add('flex'); document.getElementById('tab-logs').className = actCls; if(logTerm) setTimeout(() => { try { logFitAddon.fit(); } catch(e){} }, 50); }
             else if (tab === 'security') { document.getElementById('view-security').classList.remove('hidden'); document.getElementById('view-security').classList.add('flex'); document.getElementById('tab-security').className = actCls; }
         }
 
@@ -1874,6 +1943,8 @@
         function cloneLogs(id) { const s = serversData.find(x => x.id === id); if (s && s.customLogs) s.customLogs.forEach(l => addLogPathRow(l.label, l.type || 'file', l.path)); document.getElementById('log-clone-select').value = ''; }
 
         function connectServer(id) {
+            if (window.LogCleaner) LogCleaner.reset();
+            if (window.ContainerTerminalModal) ContainerTerminalModal.close(true);
             const srv = serversData.find(s => s.id === id); activeServerId = srv.id;
             document.getElementById('telemetry-bar').classList.add('hidden'); document.getElementById('stat-cpu').innerText = '--'; document.getElementById('stat-ram').innerText = '--';
             document.getElementById('header-title').innerText = maskDemoText(srv.name); document.getElementById('tabs').classList.remove('hidden');
@@ -2057,28 +2128,260 @@
             socket.emit('sftp-list', p);
         };
 
+        window.SftpExplorer = {
+            activePane: 'left',
+            panes: {
+                left: { serverId: null, path: '/root', items: [], selectedSet: new Set(), lastClickedIndex: -1 },
+                right: null
+            },
+
+            getPane(paneKey = 'left') {
+                return this.panes[paneKey] || this.panes.left;
+            },
+
+            refresh(paneKey = 'left') {
+                if (sftpUploadActive || !socket) return;
+                const pane = this.getPane(paneKey);
+                socket.emit('sftp-list', { path: pane.path || currentSftpPath, pane: paneKey, serverId: activeServerId });
+            },
+
+            render(data) {
+                const paneKey = (data && data.pane) || 'left';
+                const pane = this.getPane(paneKey);
+                pane.serverId = data.serverId || activeServerId;
+                pane.path = data.path || '/root';
+                pane.items = Array.isArray(data.items) ? data.items : [];
+                pane.selectedSet.clear();
+                pane.lastClickedIndex = -1;
+
+                currentSftpPath = pane.path;
+                renderSftpBreadcrumbs(currentSftpPath);
+                this.updateBulkBar();
+
+                const selectAllCb = document.getElementById('sftp-select-all');
+                if (selectAllCb) selectAllCb.checked = false;
+
+                const grid = document.getElementById('sftp-grid');
+                if (!grid) return;
+
+                if (data.error) {
+                    grid.innerHTML = `<div class="p-6 text-center text-xs font-mono text-rose-400">Error reading directory: ${escapeHtml(data.error)}</div>`;
+                    return;
+                }
+
+                if (pane.items.length === 0) {
+                    grid.innerHTML = `<div class="p-8 text-center text-xs font-mono text-slate-500">Directory is empty. Drag & drop files anywhere here to upload.</div>`;
+                    return;
+                }
+
+                const folderSvg = '<svg class="w-4 h-4 inline-block text-orange-500 dark:text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>';
+                const fileSvg = '<svg class="w-4 h-4 inline-block text-slate-400 dark:text-slate-500 group-hover:text-orange-400 transition-colors shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>';
+
+                grid.innerHTML = pane.items.map((item, idx) => {
+                    const octal = item.octal || '0644';
+                    const rwx = item.rwx || (item.isDir ? 'rwxr-xr-x' : 'rw-r--r--');
+                    return `
+                    <div class="sftp-item flex items-center justify-between px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800/60 rounded cursor-pointer group text-xs select-none transition" data-idx="${idx}" data-name="${escapeHtml(item.name)}" data-isdir="${item.isDir}">
+                      <div class="flex items-center space-x-2.5 truncate min-w-0 flex-1">
+                        <input type="checkbox" class="sftp-row-chk rounded bg-slate-800 border-slate-600 text-orange-500 focus:ring-orange-500/40 cursor-pointer shrink-0" data-idx="${idx}" data-name="${escapeHtml(item.name)}">
+                        ${item.isDir ? folderSvg : fileSvg}
+                        <span class="sftp-entry-label truncate font-mono text-slate-700 dark:text-slate-200 group-hover:text-orange-400 transition-colors" title="${item.isDir ? 'Open folder' : 'Click to edit file'}">${escapeHtml(item.name)}</span>
+                      </div>
+                      <div class="flex items-center space-x-4 shrink-0 ml-2">
+                        <button type="button" class="sftp-chmod-btn w-28 text-center font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800/90 hover:bg-orange-500/20 text-slate-600 dark:text-slate-400 hover:text-orange-400 border border-transparent hover:border-orange-500/30 transition" data-idx="${idx}" title="Inspect / Edit Permissions (${rwx})">
+                          ${escapeHtml(octal)} <span class="opacity-60 text-[10px]">${escapeHtml(rwx)}</span>
+                        </button>
+                        <span class="w-20 text-right text-slate-500 font-mono text-xs pointer-events-none">${item.isDir ? '--' : sftpFormatBytes(item.size)}</span>
+                        <div class="w-20 flex items-center justify-end space-x-1">
+                          ${!item.isDir ? `
+                            <button type="button" class="sftp-edit-btn p-1 rounded hover:bg-orange-500/20 text-slate-400 hover:text-orange-400 transition" data-idx="${idx}" title="Edit File">
+                              <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                            </button>
+                            <button type="button" class="sftp-dl-btn p-1 rounded hover:bg-sky-500/20 text-slate-400 hover:text-sky-400 transition" data-idx="${idx}" title="Download File">
+                              <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                            </button>
+                          ` : ''}
+                          <button type="button" class="sftp-del-btn p-1 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition" data-idx="${idx}" title="Delete ${item.isDir ? 'Folder' : 'File'}">
+                            <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>`;
+                }).join('');
+
+                grid.querySelectorAll('.sftp-row-chk').forEach(cb => {
+                    cb.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const idx = parseInt(cb.dataset.idx, 10);
+                        this.toggleRowSelection(idx, cb.checked, e.shiftKey);
+                    });
+                });
+
+                grid.querySelectorAll('.sftp-chmod-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const item = pane.items[parseInt(btn.dataset.idx, 10)];
+                        if (item && window.SftpChmodModal) SftpChmodModal.open([item]);
+                    });
+                });
+
+                grid.querySelectorAll('.sftp-edit-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const item = pane.items[parseInt(btn.dataset.idx, 10)];
+                        if (item && window.SftpEditorModal) SftpEditorModal.open(item.name);
+                    });
+                });
+
+                grid.querySelectorAll('.sftp-dl-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const item = pane.items[parseInt(btn.dataset.idx, 10)];
+                        if (item) downloadFile(item.name);
+                    });
+                });
+
+                grid.querySelectorAll('.sftp-del-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const item = pane.items[parseInt(btn.dataset.idx, 10)];
+                        if (item && window.SftpDeleteModal) SftpDeleteModal.open([item]);
+                    });
+                });
+
+                grid.querySelectorAll('.sftp-item').forEach(el => {
+                    el.addEventListener('click', (e) => {
+                        if (sftpUploadActive || e.target.closest('button, input')) return;
+                        const item = pane.items[parseInt(el.dataset.idx, 10)];
+                        if (!item) return;
+                        if (item.isDir) {
+                            navDir(item.name);
+                        } else if (window.SftpEditorModal) {
+                            SftpEditorModal.open(item.name);
+                        }
+                    });
+                });
+            },
+
+            toggleRowSelection(idx, checked, isShift) {
+                const pane = this.getPane('left');
+                if (isShift && pane.lastClickedIndex !== -1 && pane.lastClickedIndex !== idx) {
+                    const start = Math.min(pane.lastClickedIndex, idx);
+                    const end = Math.max(pane.lastClickedIndex, idx);
+                    for (let i = start; i <= end; i++) {
+                        if (pane.items[i]) {
+                            if (checked) pane.selectedSet.add(pane.items[i].name);
+                            else pane.selectedSet.delete(pane.items[i].name);
+                        }
+                    }
+                    document.querySelectorAll('.sftp-row-chk').forEach(box => {
+                        box.checked = pane.selectedSet.has(box.dataset.name);
+                    });
+                } else if (pane.items[idx]) {
+                    if (checked) pane.selectedSet.add(pane.items[idx].name);
+                    else pane.selectedSet.delete(pane.items[idx].name);
+                }
+                pane.lastClickedIndex = idx;
+                this.syncSelectAllCheckbox();
+                this.updateBulkBar();
+            },
+
+            toggleSelectAll(checked) {
+                const pane = this.getPane('left');
+                pane.selectedSet.clear();
+                if (checked) {
+                    pane.items.forEach(i => pane.selectedSet.add(i.name));
+                }
+                document.querySelectorAll('.sftp-row-chk').forEach(box => {
+                    box.checked = checked;
+                });
+                this.updateBulkBar();
+            },
+
+            clearSelection() {
+                this.toggleSelectAll(false);
+                const master = document.getElementById('sftp-select-all');
+                if (master) master.checked = false;
+            },
+
+            syncSelectAllCheckbox() {
+                const pane = this.getPane('left');
+                const master = document.getElementById('sftp-select-all');
+                if (!master) return;
+                master.checked = pane.items.length > 0 && pane.selectedSet.size === pane.items.length;
+            },
+
+            getSelectedItems() {
+                const pane = this.getPane('left');
+                return pane.items.filter(i => pane.selectedSet.has(i.name));
+            },
+
+            updateBulkBar() {
+                const bar = document.getElementById('sftp-bulk-bar');
+                const countEl = document.getElementById('sftp-bulk-count');
+                const dlBtn = document.getElementById('btn-sftp-bulk-download');
+                if (!bar) return;
+
+                const selected = this.getSelectedItems();
+                if (selected.length === 0) {
+                    bar.classList.add('hidden');
+                    return;
+                }
+                bar.classList.remove('hidden');
+                if (countEl) countEl.textContent = `${selected.length} selected`;
+
+                const fileItems = selected.filter(i => !i.isDir);
+                if (dlBtn) {
+                    if (fileItems.length === 0) {
+                        dlBtn.classList.add('hidden');
+                    } else {
+                        dlBtn.classList.remove('hidden');
+                        dlBtn.textContent = fileItems.length > 1 ? `Download (${fileItems.length})` : 'Download';
+                    }
+                }
+            },
+
+            downloadSelected() {
+                const files = this.getSelectedItems().filter(i => !i.isDir);
+                if (files.length === 0) return showToast('Select at least one file to download.', 'error');
+                if (files.length === 1) {
+                    downloadFile(files[0].name);
+                } else {
+                    files.forEach((f, idx) => {
+                        setTimeout(() => downloadFile(f.name), idx * 450);
+                    });
+                }
+            },
+
+            openChmodSelected() {
+                const selected = this.getSelectedItems();
+                if (selected.length > 0 && window.SftpChmodModal) {
+                    SftpChmodModal.open(selected);
+                }
+            },
+
+            promptDeleteSelected() {
+                const selected = this.getSelectedItems();
+                if (selected.length > 0 && window.SftpDeleteModal) {
+                    SftpDeleteModal.open(selected);
+                }
+            },
+
+            openTerminalHere() {
+                if (!activeServerId || !socket) return showToast('Connect to a server first.', 'error');
+                const targetDir = currentSftpPath || '/root';
+                const qDir = "'" + String(targetDir).replace(/'/g, "'\\''") + "'";
+                switchTab('terminal');
+                setTimeout(() => {
+                    if (term) term.focus();
+                    // \x15 (Ctrl+U) clears any stray half-typed line on prompt without sending SIGINT
+                    socket.emit('terminal-input', `\x15cd ${qDir} && clear\r`);
+                }, 90);
+            }
+        };
+
         function renderSftpGrid(data) {
-            currentSftpPath = data.path;
-            renderSftpBreadcrumbs(currentSftpPath);
-
-            const folderSvg = '<svg class="w-4 h-4 inline-block mr-2 text-orange-500 dark:text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>';
-            const fileSvg = '<svg class="w-4 h-4 inline-block mr-2 text-slate-400 dark:text-slate-500 group-hover:text-orange-400 transition-colors shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>';
-
-            document.getElementById('sftp-grid').innerHTML = data.items.map(i =>
-                '<div class="sftp-item flex items-center justify-between p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800/60 rounded cursor-pointer group text-xs select-none transition" data-name="' + escapeHtml(i.name) + '" data-isdir="' + i.isDir + '">' +
-                  '<div class="flex items-center space-x-1.5 truncate min-w-0">' +
-                    (i.isDir ? folderSvg : fileSvg) +
-                    '<span class="truncate font-mono text-slate-700 dark:text-slate-200">' + escapeHtml(i.name) + '</span>' +
-                  '</div>' +
-                  '<span class="text-slate-500 font-mono text-xs pointer-events-none ml-2 shrink-0">' + (i.isDir ? '' : sftpFormatBytes(i.size)) + '</span>' +
-                '</div>'
-            ).join('');
-
-            document.getElementById('sftp-grid').querySelectorAll('.sftp-item').forEach(el => el.addEventListener('dblclick', () => {
-                if (sftpUploadActive) return;
-                if (el.dataset.isdir === 'true') navDir(el.dataset.name);
-                else downloadFile(el.dataset.name);
-            }));
+            SftpExplorer.render(data);
         }
 
         function navDir(folder) {
@@ -2099,7 +2402,7 @@
             if (sftpUploadActive) return;
             downloadedChunks = [];
             if (activeDownloadToast) { activeDownloadToast.remove(); activeDownloadToast = null; }
-            activeDownloadToast = showToast('Assembling the large file transfer please wait (may take some time) Do not navigate away', 'info', 0);
+            activeDownloadToast = showToast('Assembling file transfer please wait...', 'info', 0);
             const sep = currentSftpPath.endsWith('/') ? '' : '/';
             socket.emit('sftp-download', currentSftpPath + sep + filename);
         }
@@ -2265,6 +2568,7 @@ window.openEditModal = async function(containerId) {
     const res = await fetch(`/api/docker/containers/${encodeURIComponent(cleanId)}/edit-config`);
     const cfg = await res.json();
     if (cfg.error) throw new Error(cfg.error);
+    window._spCurrentCfg = cfg;
 
     document.getElementById('sp-modal-title').textContent = 'Edit: ' + cfg.name;
     document.getElementById('sp-modal-cur-img').textContent = cfg.currentImage;
@@ -3640,6 +3944,1136 @@ async function handleImportStack(e) {
   }
 }
 
+// ============================================================================
+// SCHEDULED CONTAINER RESTARTS CONTROLLER & LIVE CRON PARSER
+// ============================================================================
+window.__dockerSchedules = window.__dockerSchedules || {};
+window.__dockerHostTime = '';
+
+window.ScheduleRestartManager = {
+  activeContainer: null,
+
+  async refresh() {
+    try {
+      const res = await fetch('/api/docker/schedules');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.schedules) {
+        window.__dockerSchedules = data.schedules;
+        window.__dockerHostTime = data.hostTime || '';
+        if (typeof renderDockerGrid === 'function') renderDockerGrid();
+      }
+    } catch (_) {}
+  },
+
+  async open(containerName) {
+    this.activeContainer = containerName;
+    const modal = document.getElementById('modal-schedule-restart');
+    const titleTarget = document.getElementById('sched-container-name');
+    const hostTimeEl = document.getElementById('sched-host-time');
+    const input = document.getElementById('sched-cron-input');
+    const removeBtn = document.getElementById('btn-remove-schedule');
+
+    if (titleTarget) titleTarget.textContent = maskDemoText(containerName);
+    if (hostTimeEl) hostTimeEl.textContent = window.__dockerHostTime || 'Checking host clock...';
+    if (modal) modal.classList.remove('hidden');
+
+    await this.refresh();
+    if (hostTimeEl && window.__dockerHostTime) hostTimeEl.textContent = window.__dockerHostTime;
+
+    const existing = window.__dockerSchedules[containerName];
+    if (existing && existing.cron) {
+      input.value = existing.cron;
+      if (removeBtn) removeBtn.classList.remove('hidden');
+    } else {
+      input.value = '0 4 * * *';
+      if (removeBtn) removeBtn.classList.add('hidden');
+    }
+
+    this.onInput(input.value);
+    setTimeout(() => { if (input) input.focus(); }, 50);
+  },
+
+  close() {
+    this.activeContainer = null;
+    const modal = document.getElementById('modal-schedule-restart');
+    if (modal) modal.classList.add('hidden');
+  },
+
+  applyPreset(cronStr) {
+    const input = document.getElementById('sched-cron-input');
+    if (input) {
+      input.value = cronStr;
+      this.onInput(cronStr);
+    }
+  },
+
+  onInput(val) {
+    const previewBox = document.getElementById('sched-human-preview');
+    const saveBtn = document.getElementById('btn-save-schedule');
+    const parsed = this.describeCron(val);
+
+    if (parsed.valid) {
+      previewBox.className = 'p-3 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-300 text-xs flex items-center gap-2';
+      previewBox.innerHTML = `<svg class="w-4 h-4 text-orange-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span><strong>Schedule:</strong> ${escapeHtml(parsed.text)}</span>`;
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+      }
+    } else {
+      previewBox.className = 'p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2';
+      previewBox.innerHTML = `<svg class="w-4 h-4 text-rose-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg><span>${escapeHtml(parsed.error)}</span>`;
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.classList.add('opacity-40', 'cursor-not-allowed');
+      }
+    }
+  },
+
+  describeCron(expr) {
+    const clean = String(expr || '').trim().replace(/\s+/g, ' ');
+    if (!clean) return { valid: false, error: 'Enter a 5-field cron expression (e.g. 0 4 * * *).' };
+    const parts = clean.split(' ');
+    if (parts.length !== 5) return { valid: false, error: `Expected 5 fields (minute hour day month weekday), got ${parts.length}.` };
+
+    const bounds = [
+      { name: 'Minute', min: 0, max: 59 },
+      { name: 'Hour', min: 0, max: 23 },
+      { name: 'Day of Month', min: 1, max: 31 },
+      { name: 'Month', min: 1, max: 12 },
+      { name: 'Day of Week', min: 0, max: 7 }
+    ];
+    const fieldRegex = /^(\*|[0-9]{1,2}(-[0-9]{1,2})?(\/[0-9]{1,2})?|\*\/[0-9]{1,2})(,(\*|[0-9]{1,2}(-[0-9]{1,2})?(\/[0-9]{1,2})?|\*\/[0-9]{1,2}))*$/;
+
+    for (let i = 0; i < 5; i++) {
+      const f = parts[i], b = bounds[i];
+      if (!fieldRegex.test(f)) return { valid: false, error: `Invalid syntax in ${b.name} field ("${f}").` };
+      const nums = f.match(/[0-9]+/g) || [];
+      for (const nStr of nums) {
+        const n = parseInt(nStr, 10);
+        if (f.includes('/' + nStr) && n === 0) return { valid: false, error: `Step interval cannot be 0 in ${b.name} field.` };
+        if (!f.includes('/' + nStr) && (n < b.min || n > b.max)) return { valid: false, error: `${b.name} value ${n} is out of range (${b.min}-${b.max}).` };
+      }
+    }
+
+    const [min, hr, dom, mon, dow] = parts;
+    const dowNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const monNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const pad2 = (v) => String(v).padStart(2, '0');
+
+    const formatDow = (val) => val.split(',').map(seg => {
+      if (seg.includes('-')) {
+        const [a, b] = seg.split('-').map(Number);
+        return `${dowNames[a] || a} through ${dowNames[b] || b}`;
+      }
+      if (seg.startsWith('*/')) return `every ${seg.slice(2)} days of the week`;
+      return dowNames[Number(seg)] || seg;
+    }).join(', ');
+
+    const formatMon = (val) => val.split(',').map(seg => {
+      if (seg.includes('-')) {
+        const [a, b] = seg.split('-').map(Number);
+        return `${monNames[a] || a}–${monNames[b] || b}`;
+      }
+      if (seg.startsWith('*/')) return `every ${seg.slice(2)} months`;
+      return monNames[Number(seg)] || seg;
+    }).join(', ');
+
+    let timePhrase = '';
+    if (min === '*' && hr === '*') {
+      timePhrase = 'Every minute';
+    } else if (min.startsWith('*/') && hr === '*') {
+      timePhrase = `Every ${min.slice(2)} minutes`;
+    } else if (/^\d+$/.test(min) && hr === '*') {
+      timePhrase = `Every hour at minute :${pad2(min)}`;
+    } else if (/^\d+$/.test(min) && hr.startsWith('*/')) {
+      timePhrase = `Every ${hr.slice(2)} hours at minute :${pad2(min)}`;
+    } else if (/^\d+$/.test(min) && /^\d+$/.test(hr)) {
+      timePhrase = `At ${pad2(hr)}:${pad2(min)}`;
+    } else {
+      const mText = min === '*' ? 'every minute' : min.startsWith('*/') ? `every ${min.slice(2)} mins` : `minute ${min}`;
+      const hText = hr === '*' ? 'every hour' : hr.startsWith('*/') ? `every ${hr.slice(2)} hrs` : `hour ${hr}`;
+      timePhrase = `At ${mText} past ${hText}`;
+    }
+
+    const qualifiers = [];
+    if (dom !== '*') {
+      qualifiers.push(dom.startsWith('*/') ? `every ${dom.slice(2)} days` : `on day ${dom} of the month`);
+    }
+    if (dow !== '*') {
+      qualifiers.push(`on ${formatDow(dow)}`);
+    }
+    if (mon !== '*') {
+      qualifiers.push(`in ${formatMon(mon)}`);
+    }
+
+    const suffix = qualifiers.length > 0 ? `, ${qualifiers.join(', ')}` : (hr !== '*' && !hr.startsWith('*/') ? ' daily' : '');
+    return { valid: true, text: `${timePhrase}${suffix}` };
+  },
+
+  async save() {
+    if (!this.activeContainer) return;
+    const cron = document.getElementById('sched-cron-input').value.trim();
+    const saveBtn = document.getElementById('btn-save-schedule');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+
+    try {
+      const res = await fetch(`/api/docker/schedules/${encodeURIComponent(this.activeContainer)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cron })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save schedule.');
+
+      showToast(`Scheduled restart saved for ${this.activeContainer}`);
+      this.close();
+      await this.refresh();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Schedule'; }
+    }
+  },
+
+  async remove() {
+    if (!this.activeContainer) return;
+    const removeBtn = document.getElementById('btn-remove-schedule');
+    if (removeBtn) { removeBtn.disabled = true; removeBtn.textContent = 'Removing...'; }
+
+    try {
+      const res = await fetch(`/api/docker/schedules/${encodeURIComponent(this.activeContainer)}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to remove schedule.');
+
+      showToast(`Scheduled restart removed for ${this.activeContainer}`);
+      this.close();
+      await this.refresh();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      if (removeBtn) { removeBtn.disabled = false; removeBtn.textContent = 'Remove Schedule'; }
+    }
+  }
+};
+
+// ============================================================================
+// EXPORT CONTAINER AS DOCKER COMPOSE (READ-ONLY PREVIEW)
+// ============================================================================
+function _yamlEscapeScalar(val) {
+  const s = String(val ?? '');
+  if (s === '' || /[:#\[\]{}&*!|>'"%@`$,\s]|^(true|false|yes|no|null|~|[0-9.-]+)$/i.test(s)) {
+    return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n') + '"';
+  }
+  return s;
+}
+
+window.buildComposeFromEditForm = function() {
+  const cfg = window._spCurrentCfg || {};
+  const rawName = (cfg.name || _spCurContainerId || 'app').replace(/^\//, '').trim();
+  const serviceName = rawName.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'app';
+  const image = (document.getElementById('sp-image-input')?.value || cfg.currentImage || '').trim();
+  const restartPolicy = document.getElementById('sp-restart-policy')?.value || 'no';
+  const privileged = !!(document.getElementById('sp-privileged')?.checked);
+
+  const envs = Array.from(document.querySelectorAll('#sp-env-list .sp-grid-row')).map(r => ({
+    key: r.querySelector('.sp-env-k').value.trim(),
+    value: r.querySelector('.sp-env-v').value
+  })).filter(e => e.key);
+
+  const ports = Array.from(document.querySelectorAll('#sp-port-list .sp-grid-row')).map(r => ({
+    hostPort: r.querySelector('.sp-port-h').value.trim(),
+    containerPort: r.querySelector('.sp-port-c').value.trim(),
+    protocol: r.querySelector('.sp-port-p').value
+  })).filter(p => p.hostPort && p.containerPort);
+
+  const binds = Array.from(document.querySelectorAll('#sp-mount-list .sp-grid-row')).map(r => ({
+    source: r.querySelector('.sp-mnt-src').value.trim(),
+    destination: r.querySelector('.sp-mnt-dst').value.trim(),
+    mode: r.querySelector('.sp-mnt-m').value
+  })).filter(m => m.source && m.destination);
+
+  const lines = ["version: '3.8'", 'services:', `  ${serviceName}:`];
+  if (image) lines.push(`    image: ${image}`);
+  lines.push(`    container_name: ${rawName}`);
+  if (restartPolicy && restartPolicy !== 'no') {
+    lines.push(`    restart: ${restartPolicy}`);
+  }
+  if (privileged) {
+    lines.push('    privileged: true');
+  }
+  if (Array.isArray(cfg.capAdd) && cfg.capAdd.length > 0) {
+    lines.push('    cap_add:');
+    cfg.capAdd.forEach(c => lines.push(`      - ${c}`));
+  }
+  if (ports.length > 0) {
+    lines.push('    ports:');
+    ports.forEach(p => {
+      const suffix = p.protocol === 'udp' ? '/udp' : '';
+      lines.push(`      - "${p.hostPort}:${p.containerPort}${suffix}"`);
+    });
+  }
+  if (envs.length > 0) {
+    lines.push('    environment:');
+    envs.forEach(e => {
+      lines.push(`      ${e.key}: ${_yamlEscapeScalar(e.value)}`);
+    });
+  }
+
+  const namedVolumes = new Set();
+  if (binds.length > 0) {
+    lines.push('    volumes:');
+    binds.forEach(b => {
+      const ro = b.mode === 'ro' ? ':ro' : '';
+      lines.push(`      - ${b.source}:${b.destination}${ro}`);
+      if (!b.source.startsWith('/') && !b.source.startsWith('.') && !b.source.startsWith('~')) {
+        namedVolumes.add(b.source);
+      }
+    });
+  }
+
+  const customNets = (cfg.networks || []).filter(n => n && n.name && !['bridge', 'host', 'none'].includes(n.name));
+  const isHostNet = (cfg.networks || []).some(n => n && n.name === 'host');
+  if (isHostNet) {
+    lines.push('    network_mode: host');
+  } else if (customNets.length > 0) {
+    lines.push('    networks:');
+    customNets.forEach(n => {
+      if (n.ipv4) {
+        lines.push(`      ${n.name}:`);
+        lines.push(`        ipv4_address: ${n.ipv4}`);
+      } else {
+        lines.push(`      - ${n.name}`);
+      }
+    });
+  }
+
+  if (namedVolumes.size > 0) {
+    lines.push('');
+    lines.push('volumes:');
+    namedVolumes.forEach(v => {
+      lines.push(`  ${v}:`);
+      lines.push('    external: true');
+    });
+  }
+
+  if (!isHostNet && customNets.length > 0) {
+    lines.push('');
+    lines.push('networks:');
+    customNets.forEach(n => {
+      lines.push(`  ${n.name}:`);
+      lines.push('    external: true');
+    });
+  }
+
+  return lines.join('\n') + '\n';
+};
+
+window.openExportComposeModal = function() {
+  const yaml = buildComposeFromEditForm();
+  const cfg = window._spCurrentCfg || {};
+  const titleEl = document.getElementById('export-compose-container-name');
+  const codeEl = document.getElementById('export-compose-yaml');
+  const modal = document.getElementById('modal-export-compose');
+  if (titleEl) titleEl.textContent = maskDemoText(cfg.name || _spCurContainerId || 'container');
+  if (codeEl) codeEl.value = yaml;
+  if (modal) modal.classList.remove('hidden');
+};
+
+window.closeExportComposeModal = function() {
+  const modal = document.getElementById('modal-export-compose');
+  if (modal) modal.classList.add('hidden');
+};
+
+window.copyExportedCompose = async function() {
+  const codeEl = document.getElementById('export-compose-yaml');
+  if (!codeEl) return;
+  try {
+    await navigator.clipboard.writeText(codeEl.value);
+    showToast('docker-compose.yml copied to clipboard');
+  } catch (_) {
+    codeEl.select();
+    document.execCommand('copy');
+    showToast('docker-compose.yml copied to clipboard');
+  }
+};
+
+window.downloadExportedCompose = function() {
+  const codeEl = document.getElementById('export-compose-yaml');
+  if (!codeEl) return;
+  const cfg = window._spCurrentCfg || {};
+  const safeName = (cfg.name || 'stack').replace(/[^a-zA-Z0-9_.-]/g, '_');
+  const blob = new Blob([codeEl.value], { type: 'text/yaml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${safeName}-docker-compose.yml`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast(`Downloaded ${safeName}-docker-compose.yml`);
+};
+
+// ============================================================================
+// TWO-STAGE LOG CLEANER (SCAN -> DELETE OLD LOGS)
+// ============================================================================
+window.LogCleaner = {
+  state: 'idle', // 'idle' | 'scanning' | 'armed' | 'deleting'
+  stagedFiles: [],
+  stagedBytes: 0,
+
+  _setButtonIdle() {
+    const btn = document.getElementById('btn-clean-logs');
+    if (!btn) return;
+    btn.disabled = false;
+    btn.className = 'flex items-center space-x-2 px-3 py-1.5 text-xs font-semibold rounded-[10px] border border-accent bg-transparent text-slate-600 dark:text-slate-300 hover:border-accent hover:bg-accent/10 hover:text-accent dark:hover:text-white transition-all shadow-sm';
+    btn.innerHTML = `<svg class="w-3.5 h-3.5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span>Clean Logs</span>`;
+  },
+
+  reset() {
+    this.state = 'idle';
+    this.stagedFiles = [];
+    this.stagedBytes = 0;
+    this._setButtonIdle();
+  },
+
+  handleClick() {
+    if (!activeServerId || !socket) {
+      return showToast('Connect to a server first.', 'error');
+    }
+    if (this.state === 'idle') {
+      this.startScan();
+    } else if (this.state === 'armed') {
+      this.executeDelete();
+    }
+  },
+
+  startScan() {
+    this.state = 'scanning';
+    this.stagedFiles = [];
+    this.stagedBytes = 0;
+
+    const btn = document.getElementById('btn-clean-logs');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<svg class="w-3.5 h-3.5 text-accent animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg><span>Scanning Logs...</span>`;
+    }
+
+    if (logTerm) {
+      logTerm.clear();
+      logTerm.writeln('\x1b[38;5;208m=== BastionCC Rotated Log Archive Scanner ===\x1b[0m');
+      logTerm.writeln('Scanning /var/log and configured server log directories for rotated archives (.1, .2, .gz, etc.)...\r\n');
+    }
+
+    socket.emit('scan-old-logs', { serverId: activeServerId });
+  },
+
+  onScanResult({ success, dirs, files, totalBytes, error }) {
+    if (error) {
+      if (logTerm) logTerm.writeln(`\x1b[31m[Scan Error] ${error}\x1b[0m`);
+      showToast(`Log scan failed: ${error}`, 'error');
+      this.reset();
+      return;
+    }
+
+    if (logTerm) {
+      logTerm.writeln(`\x1b[90mScanned directories: ${(dirs || []).join(', ')}\x1b[0m\r\n`);
+    }
+
+    if (!files || files.length === 0) {
+      if (logTerm) {
+        logTerm.writeln('\x1b[32m✔ No rotated or compressed old log archives found. Disk is clean!\x1b[0m');
+      }
+      showToast('No rotated old log files found.');
+      this.reset();
+      return;
+    }
+
+    this.stagedFiles = files.map(f => f.path);
+    this.stagedBytes = totalBytes || 0;
+    this.state = 'armed';
+
+    if (logTerm) {
+      files.forEach(f => {
+        const sizeStr = sftpFormatBytes(f.size).padStart(9, ' ');
+        logTerm.writeln(`  \x1b[33m${sizeStr}\x1b[0m  ${maskDemoText(f.path)}`);
+      });
+      logTerm.writeln('');
+      logTerm.writeln(`\x1b[38;5;208m------------------------------------------------------------------\x1b[0m`);
+      logTerm.writeln(`\x1b[1;33mFound ${files.length} rotated log file${files.length === 1 ? '' : 's'} — Reclaimable space: ${sftpFormatBytes(this.stagedBytes)}\x1b[0m`);
+      logTerm.writeln(`\x1b[90mClick the red "Delete Old Logs" button above to permanently remove these files.\x1b[0m`);
+    }
+
+    const btn = document.getElementById('btn-clean-logs');
+    if (btn) {
+      btn.disabled = false;
+      btn.className = 'flex items-center space-x-2 px-3 py-1.5 text-xs font-bold rounded-[10px] border border-rose-500 bg-rose-600 hover:bg-rose-500 text-white transition-all shadow-lg shadow-rose-900/30';
+      btn.innerHTML = `<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg><span>Delete Old Logs (${files.length})</span>`;
+    }
+  },
+
+  executeDelete() {
+    if (this.stagedFiles.length === 0) return this.reset();
+    this.state = 'deleting';
+
+    const btn = document.getElementById('btn-clean-logs');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<svg class="w-3.5 h-3.5 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg><span>Deleting...</span>`;
+    }
+
+    if (logTerm) {
+      logTerm.writeln('\r\n\x1b[31mPurging rotated log archives...\x1b[0m');
+    }
+
+    socket.emit('delete-old-logs', {
+      serverId: activeServerId,
+      files: this.stagedFiles
+    });
+  },
+
+  onDeleteResult({ success, deletedCount, error }) {
+    const freedLabel = sftpFormatBytes(this.stagedBytes);
+    if (error) {
+      if (logTerm) logTerm.writeln(`\x1b[31m[Delete Error] ${error}\x1b[0m`);
+      showToast(`Failed to delete old logs: ${error}`, 'error');
+      this.reset();
+      return;
+    }
+
+    if (logTerm) {
+      logTerm.writeln(`\x1b[32m✔ Deleted ${deletedCount} rotated log file${deletedCount === 1 ? '' : 's'} (Freed ${freedLabel}).\x1b[0m`);
+    }
+    showToast(`Deleted ${deletedCount} old log files (${freedLabel} freed)`);
+    this.reset();
+  }
+};
+
+// ============================================================================
+// ISOLATED CONTAINER TERMINAL MODAL (78% x 80% DEDICATED PTY)
+// ============================================================================
+window.ContainerTerminalModal = {
+  term: null,
+  fitAddon: null,
+  resizeObserver: null,
+  activeContainer: null,
+  activeShell: '/bin/sh',
+
+  _ensureTerminal() {
+    if (this.term) return;
+    const hostEl = document.getElementById('container-modal-xterm');
+    if (!hostEl) return;
+
+    this.term = new Terminal({
+      theme: { background: '#0b0f17', foreground: '#f8fafc', cursor: '#f97316' },
+      convertEol: true,
+      cursorBlink: true,
+      scrollback: 5000,
+      fontSize: 13,
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+    });
+    this.fitAddon = new FitAddon.FitAddon();
+    this.term.loadAddon(this.fitAddon);
+    this.term.open(hostEl);
+
+    this.term.onData(data => {
+      if (socket && this.activeContainer) {
+        socket.emit('container-shell-input', data);
+      }
+    });
+
+    this.term.onResize(size => {
+      if (socket && this.activeContainer) {
+        socket.emit('container-shell-resize', { cols: size.cols, rows: size.rows });
+      }
+    });
+
+    this.resizeObserver = new ResizeObserver(() => {
+      const modal = document.getElementById('modal-container-terminal');
+      if (modal && !modal.classList.contains('hidden') && hostEl.clientHeight > 0) {
+        try {
+          this.fitAddon.fit();
+          if (socket && this.activeContainer && this.term.cols && this.term.rows) {
+            socket.emit('container-shell-resize', { cols: this.term.cols, rows: this.term.rows });
+          }
+        } catch (_) {}
+      }
+    });
+    this.resizeObserver.observe(hostEl);
+  },
+
+  _setStatus(label, theme) {
+    const pill = document.getElementById('cterm-status-pill');
+    if (!pill) return;
+    if (theme === 'connected') {
+      pill.className = 'text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+    } else if (theme === 'closed') {
+      pill.className = 'text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30';
+    } else {
+      pill.className = 'text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30 animate-pulse';
+    }
+    pill.textContent = label;
+  },
+
+  async open(containerName) {
+    this.activeContainer = containerName;
+    const modal = document.getElementById('modal-container-terminal');
+    const nameEl = document.getElementById('cterm-container-name');
+    const shellEl = document.getElementById('cterm-shell-badge');
+
+    if (nameEl) nameEl.textContent = maskDemoText(containerName);
+    if (shellEl) shellEl.textContent = 'probing...';
+    this._setStatus('Probing Shell...', 'connecting');
+    if (modal) modal.classList.remove('hidden');
+
+    this._ensureTerminal();
+    this.term.clear();
+    this.term.writeln(`\x1b[38;5;208mAttaching isolated PTY session to ${maskDemoText(containerName)}...\x1b[0m\r\n`);
+
+    setTimeout(() => {
+      try { this.fitAddon.fit(); } catch (_) {}
+      this.term.focus();
+    }, 60);
+
+    let detectedShell = '/bin/sh';
+    try {
+      const headers = {};
+      if (typeof authToken !== 'undefined' && authToken) headers['Authorization'] = 'Bearer ' + authToken;
+      const res = await fetch('/api/docker/containers/' + encodeURIComponent(containerName) + '/probe-shell', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.shell) detectedShell = data.shell;
+      }
+    } catch (_) {}
+
+    this.activeShell = detectedShell;
+    if (shellEl) shellEl.textContent = detectedShell;
+    this._setStatus('Connecting PTY...', 'connecting');
+
+    setTimeout(() => {
+      try { this.fitAddon.fit(); } catch (_) {}
+      if (socket && this.activeContainer === containerName) {
+        socket.emit('container-shell-start', {
+          container: containerName,
+          shell: detectedShell,
+          cols: (this.term && this.term.cols) || 100,
+          rows: (this.term && this.term.rows) || 30
+        });
+      }
+    }, 80);
+  },
+
+  reconnect() {
+    if (this.activeContainer) {
+      this.open(this.activeContainer);
+    }
+  },
+
+  onReady({ shell }) {
+    this._setStatus('Connected', 'connected');
+    const shellEl = document.getElementById('cterm-shell-badge');
+    if (shellEl && shell) shellEl.textContent = shell;
+    if (this.term) {
+      try { this.fitAddon.fit(); } catch (_) {}
+      this.term.focus();
+    }
+  },
+
+  onClosed() {
+    this._setStatus('Session Ended', 'closed');
+    if (this.term) {
+      this.term.writeln('\r\n\x1b[90m[Container shell exited. Click Reconnect to open a new session or Close to exit.]\x1b[0m');
+    }
+  },
+
+  write(data) {
+    if (this.term) this.term.write(data);
+  },
+
+  close(silent = false) {
+    if (socket && this.activeContainer) {
+      socket.emit('container-shell-close');
+    }
+    this.activeContainer = null;
+    const modal = document.getElementById('modal-container-terminal');
+    if (modal) modal.classList.add('hidden');
+    if (!silent && this.term) {
+      this.term.clear();
+    }
+  }
+};
+
+// ============================================================================
+// SFTP IN-BROWSER CODE & CONFIG EDITOR MODAL (LINE NUMBERS + SYNTAX + LINT)
+// ============================================================================
+window.SftpEditorModal = {
+  filePath: null,
+  originalMode: null,
+  lang: 'TEXT',
+  isValidSyntax: true,
+
+  detectLanguage(filePath) {
+    const name = (filePath.split('/').pop() || '').toLowerCase();
+    if (name === 'dockerfile' || name.startsWith('dockerfile.')) return 'DOCKERFILE';
+    if (name === 'caddyfile' || name.endsWith('.conf') || name.includes('nginx')) return 'NGINX / CONF';
+    if (name === '.env' || name.startsWith('.env.') || name.endsWith('.ini') || name.endsWith('.toml')) return 'ENV / INI';
+    const ext = name.includes('.') ? name.split('.').pop() : '';
+    const map = {
+      json: 'JSON', yml: 'YAML', yaml: 'YAML', sh: 'BASH', bash: 'BASH', zsh: 'BASH',
+      js: 'JAVASCRIPT', mjs: 'JAVASCRIPT', cjs: 'JAVASCRIPT', ts: 'TYPESCRIPT',
+      py: 'PYTHON', html: 'HTML', htm: 'HTML', css: 'CSS', md: 'MARKDOWN',
+      sql: 'SQL', xml: 'XML', svg: 'XML', log: 'LOG', txt: 'TEXT', service: 'SYSTEMD'
+    };
+    return map[ext] || 'TEXT';
+  },
+
+  highlightCode(code, lang) {
+    let escaped = escapeHtml(code);
+    if (lang === 'JSON') {
+      escaped = escaped
+        .replace(/(&quot;(?:\\.|[^&])*?&quot;)(\s*:)/g, '<span class="text-sky-400 font-semibold">$1</span>$2')
+        .replace(/(:\s*)(&quot;(?:\\.|[^&])*?&quot;)/g, '$1<span class="text-amber-300">$2</span>')
+        .replace(/\b(true|false|null)\b/g, '<span class="text-pink-400 font-semibold">$1</span>')
+        .replace(/\b(-?\d+(?:\.\d+)?)\b/g, '<span class="text-purple-400">$1</span>');
+    } else if (lang === 'YAML' || lang === 'DOCKERFILE' || lang === 'NGINX / CONF' || lang === 'ENV / INI' || lang === 'SYSTEMD') {
+      escaped = escaped
+        .replace(/(^|\n)([ \t]*#[^\n]*)/g, '$1<span class="text-slate-500 italic">$2</span>')
+        .replace(/(^|\n)([ \t]*[a-zA-Z0-9_.-]+)(\s*[:=])/g, '$1<span class="text-sky-400 font-semibold">$2</span>$3')
+        .replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;)/g, '<span class="text-amber-300">$1</span>')
+        .replace(/\b(true|false|yes|no|on|off)\b/gi, '<span class="text-pink-400 font-semibold">$1</span>');
+    } else if (['BASH', 'JAVASCRIPT', 'TYPESCRIPT', 'PYTHON', 'SQL'].includes(lang)) {
+      escaped = escaped
+        .replace(/(^|\n)([ \t]*(?:#|\/\/|--)[^\n]*)/g, '$1<span class="text-slate-500 italic">$2</span>')
+        .replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;)/g, '<span class="text-amber-300">$1</span>')
+        .replace(/\b(const|let|var|function|return|if|else|for|while|async|await|import|from|export|def|class|try|catch|SELECT|FROM|WHERE|INSERT|UPDATE|DELETE|echo|exit|fi|done|then)\b/g, '<span class="text-pink-400 font-semibold">$1</span>');
+    }
+    return escaped + (code.endsWith('\n') ? ' ' : '');
+  },
+
+  validateSyntax(code, lang) {
+    const pill = document.getElementById('sftp-ed-lint-pill');
+    if (!pill) return;
+
+    if (lang === 'JSON') {
+      try {
+        JSON.parse(code);
+        this.isValidSyntax = true;
+        pill.className = 'text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+        pill.textContent = '✔ Valid JSON';
+        pill.classList.remove('hidden');
+      } catch (err) {
+        this.isValidSyntax = false;
+        pill.className = 'text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30';
+        pill.textContent = '✖ JSON Error: ' + err.message;
+        pill.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (lang === 'YAML') {
+      if (code.includes('\t')) {
+        this.isValidSyntax = false;
+        pill.className = 'text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30';
+        pill.textContent = '✖ YAML Error: Tab characters are not allowed';
+        pill.classList.remove('hidden');
+        return;
+      }
+      if (typeof jsyaml !== 'undefined') {
+        try {
+          jsyaml.load(code);
+          this.isValidSyntax = true;
+          pill.className = 'text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+          pill.textContent = '✔ Valid YAML';
+          pill.classList.remove('hidden');
+        } catch (err) {
+          this.isValidSyntax = false;
+          const line = err.mark ? `Line ${err.mark.line + 1}: ` : '';
+          pill.className = 'text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30';
+          pill.textContent = `✖ YAML Error: ${line}${err.reason || err.message}`;
+          pill.classList.remove('hidden');
+        }
+        return;
+      }
+    }
+
+    this.isValidSyntax = true;
+    pill.classList.add('hidden');
+  },
+
+  open(filename) {
+    if (!socket || sftpUploadActive) return;
+    const sep = currentSftpPath.endsWith('/') ? '' : '/';
+    const fullPath = currentSftpPath + sep + filename;
+    this.filePath = fullPath;
+    this.lang = this.detectLanguage(fullPath);
+
+    const modal = document.getElementById('modal-sftp-editor');
+    const pathEl = document.getElementById('sftp-ed-filepath');
+    const langEl = document.getElementById('sftp-ed-lang');
+    const modeEl = document.getElementById('sftp-ed-mode');
+    const ta = document.getElementById('sftp-ed-textarea');
+
+    if (pathEl) pathEl.textContent = maskDemoText(fullPath);
+    if (langEl) langEl.textContent = this.lang;
+    if (modeEl) modeEl.textContent = 'loading...';
+    if (ta) {
+      ta.value = 'Loading remote file...';
+      ta.disabled = true;
+    }
+    this.syncView();
+    if (modal) modal.classList.remove('hidden');
+
+    socket.emit('sftp-read-file', { filePath: fullPath, pane: 'left' });
+  },
+
+  onFileLoaded(res) {
+    if (res.error) {
+      this.close();
+      showToast(res.error, 'error');
+      return;
+    }
+    this.filePath = res.filePath;
+    this.originalMode = res.mode;
+    const modeEl = document.getElementById('sftp-ed-mode');
+    const ta = document.getElementById('sftp-ed-textarea');
+    if (modeEl) modeEl.textContent = `chmod ${res.octal || '0644'}`;
+    if (ta) {
+      ta.disabled = false;
+      ta.value = res.content || '';
+      this.syncView();
+      ta.focus();
+    }
+  },
+
+  syncView() {
+    const ta = document.getElementById('sftp-ed-textarea');
+    const gutter = document.getElementById('sftp-ed-gutter');
+    const highlight = document.getElementById('sftp-ed-highlight');
+    if (!ta) return;
+
+    const val = ta.value || '';
+    const lineCount = Math.max(1, val.split('\n').length);
+    if (gutter) {
+      let nums = '';
+      for (let i = 1; i <= lineCount; i++) nums += `<div>${i}</div>`;
+      gutter.innerHTML = nums;
+    }
+    if (highlight) {
+      highlight.innerHTML = this.highlightCode(val, this.lang);
+    }
+    this.validateSyntax(val, this.lang);
+  },
+
+  syncScroll() {
+    const ta = document.getElementById('sftp-ed-textarea');
+    const gutter = document.getElementById('sftp-ed-gutter');
+    const highlightPre = document.getElementById('sftp-ed-highlight-wrap');
+    if (!ta) return;
+    if (gutter) gutter.scrollTop = ta.scrollTop;
+    if (highlightPre) {
+      highlightPre.scrollTop = ta.scrollTop;
+      highlightPre.scrollLeft = ta.scrollLeft;
+    }
+  },
+
+  handleKeyDown(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      this.save();
+      return;
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const ta = e.target;
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      ta.value = ta.value.substring(0, start) + '  ' + ta.value.substring(end);
+      ta.selectionStart = ta.selectionEnd = start + 2;
+      this.syncView();
+    }
+  },
+
+  save() {
+    if (!this.filePath || !socket) return;
+    if (!this.isValidSyntax) {
+      const proceed = confirm(`Warning: This ${this.lang} file has a syntax error. Saving broken syntax may break services using this config.\n\nSave anyway?`);
+      if (!proceed) return;
+    }
+
+    const ta = document.getElementById('sftp-ed-textarea');
+    const saveBtn = document.getElementById('btn-sftp-ed-save');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+
+    socket.emit('sftp-write-file', {
+      filePath: this.filePath,
+      content: ta ? ta.value : '',
+      originalMode: this.originalMode,
+      pane: 'left'
+    });
+  },
+
+  onFileSaved(res) {
+    const saveBtn = document.getElementById('btn-sftp-ed-save');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save File'; }
+
+    if (res.error) {
+      return showToast(`Save failed: ${res.error}`, 'error');
+    }
+    showToast(`Saved ${res.filePath.split('/').pop()} (permissions preserved)`);
+    SftpExplorer.refresh('left');
+  },
+
+  close() {
+    this.filePath = null;
+    this.originalMode = null;
+    const modal = document.getElementById('modal-sftp-editor');
+    if (modal) modal.classList.add('hidden');
+  }
+};
+
+// ============================================================================
+// SFTP CHMOD PERMISSIONS INSPECTOR MODAL
+// ============================================================================
+window.SftpChmodModal = {
+  targetItems: [],
+
+  open(items) {
+    this.targetItems = items || [];
+    if (this.targetItems.length === 0) return;
+
+    const modal = document.getElementById('modal-sftp-chmod');
+    const targetEl = document.getElementById('sftp-chmod-target');
+    const recWrap = document.getElementById('sftp-chmod-recursive-wrap');
+    const recChk = document.getElementById('sftp-chmod-recursive');
+    const octalInput = document.getElementById('sftp-chmod-octal');
+
+    if (targetEl) {
+      targetEl.textContent = this.targetItems.length === 1
+        ? maskDemoText(this.targetItems[0].name)
+        : `${this.targetItems.length} selected items`;
+    }
+
+    const hasDir = this.targetItems.some(i => i.isDir);
+    if (recWrap) recWrap.classList.toggle('hidden', !hasDir);
+    if (recChk) recChk.checked = false;
+
+    const initialOctal = this.targetItems[0].octal || '0644';
+    if (octalInput) octalInput.value = initialOctal;
+    this.syncFromOctal(initialOctal);
+
+    if (modal) modal.classList.remove('hidden');
+  },
+
+  close() {
+    this.targetItems = [];
+    const modal = document.getElementById('modal-sftp-chmod');
+    if (modal) modal.classList.add('hidden');
+  },
+
+  setPreset(octal) {
+    const octalInput = document.getElementById('sftp-chmod-octal');
+    if (octalInput) octalInput.value = octal;
+    this.syncFromOctal(octal);
+  },
+
+  syncFromOctal(val) {
+    const clean = String(val || '').trim();
+    const preview = document.getElementById('sftp-chmod-rwx-preview');
+    if (!/^0?[0-7]{3}$/.test(clean)) {
+      if (preview) preview.textContent = 'Invalid octal';
+      return;
+    }
+    const mode = parseInt(clean, 8);
+    const map = [
+      ['owner-r', 0o400], ['owner-w', 0o200], ['owner-x', 0o100],
+      ['group-r', 0o040], ['group-w', 0o020], ['group-x', 0o010],
+      ['public-r', 0o004], ['public-w', 0o002], ['public-x', 0o001]
+    ];
+    map.forEach(([id, bit]) => {
+      const cb = document.getElementById('chk-perm-' + id);
+      if (cb) cb.checked = !!(mode & bit);
+    });
+    this._updatePreview(mode);
+  },
+
+  syncFromMatrix() {
+    const map = [
+      ['owner-r', 0o400], ['owner-w', 0o200], ['owner-x', 0o100],
+      ['group-r', 0o040], ['group-w', 0o020], ['group-x', 0o010],
+      ['public-r', 0o004], ['public-w', 0o002], ['public-x', 0o001]
+    ];
+    let mode = 0;
+    map.forEach(([id, bit]) => {
+      const cb = document.getElementById('chk-perm-' + id);
+      if (cb && cb.checked) mode |= bit;
+    });
+    const octalStr = '0' + mode.toString(8).padStart(3, '0');
+    const octalInput = document.getElementById('sftp-chmod-octal');
+    if (octalInput) octalInput.value = octalStr;
+    this._updatePreview(mode);
+  },
+
+  _updatePreview(mode) {
+    const preview = document.getElementById('sftp-chmod-rwx-preview');
+    if (!preview) return;
+    const rwx = [
+      (mode & 0o400) ? 'r' : '-', (mode & 0o200) ? 'w' : '-', (mode & 0o100) ? 'x' : '-',
+      (mode & 0o040) ? 'r' : '-', (mode & 0o020) ? 'w' : '-', (mode & 0o010) ? 'x' : '-',
+      (mode & 0o004) ? 'r' : '-', (mode & 0o002) ? 'w' : '-', (mode & 0o001) ? 'x' : '-'
+    ].join('');
+    preview.textContent = rwx;
+  },
+
+  apply() {
+    if (this.targetItems.length === 0 || !socket) return;
+    const modeOctal = (document.getElementById('sftp-chmod-octal')?.value || '').trim();
+    if (!/^0?[0-7]{3,4}$/.test(modeOctal)) {
+      return showToast('Enter a valid 3- or 4-digit octal permission (e.g. 0644).', 'error');
+    }
+    const recursive = !!(document.getElementById('sftp-chmod-recursive')?.checked);
+    const sep = currentSftpPath.endsWith('/') ? '' : '/';
+    const paths = this.targetItems.map(i => currentSftpPath + sep + i.name);
+
+    const applyBtn = document.getElementById('btn-sftp-chmod-apply');
+    if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = 'Applying...'; }
+
+    socket.emit('sftp-chmod', { paths, modeOctal, recursive, pane: 'left' });
+  },
+
+  onComplete(res) {
+    const applyBtn = document.getElementById('btn-sftp-chmod-apply');
+    if (applyBtn) { applyBtn.disabled = false; applyBtn.textContent = 'Apply Permissions'; }
+
+    if (res.error) {
+      return showToast(`Chmod failed: ${res.error}`, 'error');
+    }
+    showToast(`Updated permissions on ${res.count} item${res.count === 1 ? '' : 's'}`);
+    this.close();
+    SftpExplorer.refresh('left');
+  }
+};
+
+// ============================================================================
+// SFTP ULTRA-CONFIRMED DELETE MODAL
+// ============================================================================
+window.SftpDeleteModal = {
+  targetItems: [],
+  targetPaths: [],
+  requiredKeyword: null,
+
+  open(items) {
+    this.targetItems = items || [];
+    if (this.targetItems.length === 0) return;
+
+    const sep = currentSftpPath.endsWith('/') ? '' : '/';
+    this.targetPaths = this.targetItems.map(i => currentSftpPath + sep + i.name);
+
+    const hasDir = this.targetItems.some(i => i.isDir);
+    const isMulti = this.targetItems.length > 1;
+
+    // Require typing folder name for 1 folder, or typing DELETE for multi-item bulk delete
+    if (!isMulti && hasDir) {
+      this.requiredKeyword = this.targetItems[0].name;
+    } else if (isMulti) {
+      this.requiredKeyword = 'DELETE';
+    } else {
+      this.requiredKeyword = null;
+    }
+
+    const modal = document.getElementById('modal-sftp-delete');
+    const listEl = document.getElementById('sftp-del-paths-list');
+    const nestedBox = document.getElementById('sftp-del-nested-info');
+    const ackChk = document.getElementById('sftp-del-ack-chk');
+    const typeWrap = document.getElementById('sftp-del-type-wrap');
+    const typePrompt = document.getElementById('sftp-del-type-prompt');
+    const typeInput = document.getElementById('sftp-del-type-input');
+
+    if (listEl) {
+      listEl.innerHTML = this.targetItems.map((item, idx) => `
+        <div class="flex items-center justify-between py-1 border-b border-slate-800/80 last:border-b-0">
+          <span class="truncate text-rose-300 font-semibold">${item.isDir ? '📁' : '📄'} ${escapeHtml(maskDemoText(this.targetPaths[idx]))}</span>
+          <span class="text-slate-500 text-[11px] ml-2 shrink-0">${item.isDir ? 'Directory' : sftpFormatBytes(item.size)}</span>
+        </div>
+      `).join('');
+    }
+
+    if (nestedBox) {
+      if (hasDir) {
+        nestedBox.classList.remove('hidden');
+        nestedBox.textContent = 'Calculating directory contents...';
+        socket.emit('sftp-preflight-delete', { paths: this.targetPaths, pane: 'left' });
+      } else {
+        nestedBox.classList.add('hidden');
+      }
+    }
+
+    if (ackChk) ackChk.checked = false;
+    if (typeInput) typeInput.value = '';
+
+    if (this.requiredKeyword) {
+      if (typeWrap) typeWrap.classList.remove('hidden');
+      if (typePrompt) {
+        typePrompt.innerHTML = `Type <code class="px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-500/30 font-bold">${escapeHtml(this.requiredKeyword)}</code> to unlock permanent deletion:`;
+      }
+    } else {
+      if (typeWrap) typeWrap.classList.add('hidden');
+    }
+
+    this.validateGate();
+    if (modal) modal.classList.remove('hidden');
+  },
+
+  onPreflight({ nestedCount }) {
+    const nestedBox = document.getElementById('sftp-del-nested-info');
+    if (!nestedBox) return;
+    nestedBox.innerHTML = `⚠️ Directory contents check: <strong>${nestedCount}</strong> nested file${nestedCount === 1 ? '' : 's'}/subfolder${nestedCount === 1 ? '' : 's'} will also be permanently deleted.`;
+  },
+
+  validateGate() {
+    const ackOk = !!(document.getElementById('sftp-del-ack-chk')?.checked);
+    const typed = (document.getElementById('sftp-del-type-input')?.value || '').trim();
+    const keywordOk = !this.requiredKeyword || typed === this.requiredKeyword;
+    const btn = document.getElementById('btn-sftp-del-confirm');
+    if (!btn) return;
+
+    const unlocked = ackOk && keywordOk;
+    btn.disabled = !unlocked;
+    if (unlocked) {
+      btn.classList.remove('opacity-40', 'cursor-not-allowed');
+    } else {
+      btn.classList.add('opacity-40', 'cursor-not-allowed');
+    }
+  },
+
+  execute() {
+    if (this.targetPaths.length === 0 || !socket) return;
+    const btn = document.getElementById('btn-sftp-del-confirm');
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
+
+    socket.emit('sftp-delete', { paths: this.targetPaths, pane: 'left' });
+  },
+
+  onComplete(res) {
+    const btn = document.getElementById('btn-sftp-del-confirm');
+    if (btn) { btn.disabled = false; btn.textContent = 'Permanently Delete'; }
+
+    if (res.error) {
+      return showToast(`Delete failed: ${res.error}`, 'error');
+    }
+    showToast(`Permanently deleted ${res.deletedCount} item${res.deletedCount === 1 ? '' : 's'}`);
+    this.close();
+    SftpExplorer.refresh('left');
+  },
+
+  close() {
+    this.targetItems = [];
+    this.targetPaths = [];
+    this.requiredKeyword = null;
+    const modal = document.getElementById('modal-sftp-delete');
+    if (modal) modal.classList.add('hidden');
+  }
+};
+
 /* BASTIONCC_V198_SCRIPT_END */
 </script>
 <!-- BASTIONCC_V198_MODALS_START -->
@@ -3762,6 +5196,7 @@ async function handleImportStack(e) {
       </div>
 
       <div class="sp-modal-footer">
+        <button type="button" class="sp-btn-sec" style="margin-right: auto; border-color: rgba(16, 185, 129, 0.4); color: #34d399;" onclick="openExportComposeModal()">📄 View as Compose</button>
         <button type="button" class="sp-btn-sec" onclick="closeEditModal()">Cancel</button>
         <button type="button" id="sp-btn-deploy" class="sp-btn-orange" onclick="submitContainerDeployment()">Deploy Changes</button>
       </div>
@@ -4344,6 +5779,299 @@ async function handleImportStack(e) {
       <button id="btn-execute-deploy" type="button" onclick="ComposeManager.deploy()" class="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-lg shadow-sm border border-emerald-500/30 transition-all">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         <span id="btn-deploy-text">Deploy Stack</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Scheduled Container Restart Modal -->
+<div id="modal-schedule-restart" class="hidden fixed inset-0 z-[75] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
+  <div class="bg-[#13171f] border border-[#242c38] rounded-[10px] shadow-2xl max-w-lg w-full overflow-hidden text-slate-200">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-[#242c38] bg-[#0d1117]">
+      <div class="flex items-center gap-2.5">
+        <div class="p-1.5 rounded-lg bg-orange-500/15 text-orange-400 border border-orange-500/30">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-white">Schedule Container Restart</h3>
+          <p class="text-[11px] text-slate-400 font-mono">Target: <span id="sched-container-name" class="text-orange-400 font-semibold"></span></p>
+        </div>
+      </div>
+      <button type="button" onclick="ScheduleRestartManager.close()" class="text-slate-400 hover:text-white text-lg leading-none">✕</button>
+    </div>
+
+    <div class="p-5 space-y-4">
+      <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0d1117] border border-slate-800 text-[11px] font-mono">
+        <span class="text-slate-400">Remote Host Time & Zone:</span>
+        <span id="sched-host-time" class="text-emerald-400 font-semibold">--</span>
+      </div>
+
+      <div>
+        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Quick Presets</label>
+        <div class="flex flex-wrap gap-1.5">
+          <button type="button" onclick="ScheduleRestartManager.applyPreset('0 3 * * *')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-orange-500/20 hover:text-orange-300 border border-slate-700 hover:border-orange-500/40 text-[11px] font-mono transition">Daily 03:00</button>
+          <button type="button" onclick="ScheduleRestartManager.applyPreset('0 4 * * *')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-orange-500/20 hover:text-orange-300 border border-slate-700 hover:border-orange-500/40 text-[11px] font-mono transition">Daily 04:00</button>
+          <button type="button" onclick="ScheduleRestartManager.applyPreset('0 */6 * * *')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-orange-500/20 hover:text-orange-300 border border-slate-700 hover:border-orange-500/40 text-[11px] font-mono transition">Every 6h</button>
+          <button type="button" onclick="ScheduleRestartManager.applyPreset('0 */12 * * *')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-orange-500/20 hover:text-orange-300 border border-slate-700 hover:border-orange-500/40 text-[11px] font-mono transition">Every 12h</button>
+          <button type="button" onclick="ScheduleRestartManager.applyPreset('0 4 * * 0')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-orange-500/20 hover:text-orange-300 border border-slate-700 hover:border-orange-500/40 text-[11px] font-mono transition">Weekly Sun 04:00</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="flex justify-between items-center mb-1">
+          <label for="sched-cron-input" class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Crontab Frequency</label>
+          <span class="text-[10px] font-mono text-slate-500">min &bull; hour &bull; day &bull; month &bull; weekday</span>
+        </div>
+        <input type="text" id="sched-cron-input" placeholder="0 4 * * *" oninput="ScheduleRestartManager.onInput(this.value)" class="w-full bg-[#0b0f17] border border-slate-700 focus:border-orange-500 rounded-[10px] px-3.5 py-2.5 text-sm font-mono text-white outline-none tracking-wider" />
+      </div>
+
+      <div id="sched-human-preview" class="p-3 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-300 text-xs flex items-center gap-2">
+        <span>Schedule: At 04:00 daily</span>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between px-5 py-3.5 border-t border-[#242c38] bg-[#0d1117]">
+      <button type="button" id="btn-remove-schedule" onclick="ScheduleRestartManager.remove()" class="hidden px-3 py-1.5 rounded-[10px] text-xs font-semibold bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white border border-rose-500/30 transition">
+        Remove Schedule
+      </button>
+      <div class="flex items-center gap-2 ml-auto">
+        <button type="button" onclick="ScheduleRestartManager.close()" class="px-3.5 py-1.5 rounded-[10px] text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition">
+          Cancel
+        </button>
+        <button type="button" id="btn-save-schedule" onclick="ScheduleRestartManager.save()" class="px-4 py-1.5 rounded-[10px] text-xs font-semibold bg-orange-600 hover:bg-orange-500 text-white transition shadow-lg">
+          Save Schedule
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Export Container as Compose Preview Modal -->
+<div id="modal-export-compose" class="hidden fixed inset-0 z-[10050] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
+  <div class="bg-[#13171f] border border-[#242c38] rounded-[10px] shadow-2xl max-w-2xl w-full overflow-hidden text-slate-200 flex flex-col max-h-[85vh]">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-[#242c38] bg-[#0d1117]">
+      <div class="flex items-center gap-2.5">
+        <div class="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-white">Exported Compose Configuration</h3>
+          <p class="text-[11px] text-slate-400 font-mono">Source: <span id="export-compose-container-name" class="text-emerald-400 font-semibold"></span></p>
+        </div>
+      </div>
+      <button type="button" onclick="closeExportComposeModal()" class="text-slate-400 hover:text-white text-lg leading-none">✕</button>
+    </div>
+
+    <div class="p-5 flex-1 overflow-y-auto">
+      <textarea id="export-compose-yaml" readonly rows="18" class="w-full bg-[#0b0f17] border border-slate-700 rounded-[10px] p-4 text-xs font-mono text-emerald-300 leading-relaxed outline-none resize-none"></textarea>
+    </div>
+
+    <div class="flex items-center justify-between px-5 py-3.5 border-t border-[#242c38] bg-[#0d1117]">
+      <button type="button" onclick="closeExportComposeModal()" class="px-3.5 py-1.5 rounded-[10px] text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition">
+        Close
+      </button>
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="copyExportedCompose()" class="px-3.5 py-1.5 rounded-[10px] text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-orange-400 border border-orange-500/30 transition">
+          Copy YAML
+        </button>
+        <button type="button" onclick="downloadExportedCompose()" class="px-4 py-1.5 rounded-[10px] text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-lg">
+          Download docker-compose.yml
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Isolated Container Terminal Modal (78% x 80%) -->
+<div id="modal-container-terminal" class="hidden fixed inset-0 z-[10060] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
+  <div class="bg-[#13171f] border border-[#242c38] rounded-[10px] shadow-2xl w-[78vw] max-w-6xl h-[80vh] flex flex-col overflow-hidden text-slate-200">
+    <div class="flex items-center justify-between px-5 py-3.5 border-b border-[#242c38] bg-[#0d1117] shrink-0">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="px-2 py-1 rounded-lg bg-orange-500/15 text-orange-400 border border-orange-500/30 font-mono text-xs font-bold shrink-0">
+          &gt;_
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-bold text-white truncate">Container Shell: <span id="cterm-container-name" class="text-orange-400 font-mono"></span></h3>
+            <span id="cterm-shell-badge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">/bin/sh</span>
+            <span id="cterm-status-pill" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">Connecting...</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Isolated container PTY — main host terminal remains untouched</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <button type="button" onclick="ContainerTerminalModal.reconnect()" class="px-3 py-1.5 rounded-[10px] text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+          Reconnect
+        </button>
+        <button type="button" onclick="ContainerTerminalModal.close()" class="px-3.5 py-1.5 rounded-[10px] text-xs font-bold bg-rose-500/15 hover:bg-rose-500 text-rose-400 hover:text-white border border-rose-500/30 transition">
+          Close Shell ✕
+        </button>
+      </div>
+    </div>
+
+    <div class="flex-1 bg-[#0b0f17] p-2.5 min-h-0 relative">
+      <div id="container-modal-xterm" class="w-full h-full"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Large SFTP In-Browser Code & Config Editor Modal -->
+<div id="modal-sftp-editor" class="hidden fixed inset-0 z-[10070] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
+  <div class="bg-[#13171f] border border-[#242c38] rounded-[10px] shadow-2xl w-[82vw] max-w-6xl h-[85vh] flex flex-col overflow-hidden text-slate-200">
+    <div class="flex items-center justify-between px-5 py-3.5 border-b border-[#242c38] bg-[#0d1117] shrink-0 gap-3 flex-wrap">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="p-1.5 rounded-lg bg-orange-500/15 text-orange-400 border border-orange-500/30 shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h3 id="sftp-ed-filepath" class="text-sm font-bold font-mono text-white truncate">/path/to/file</h3>
+            <span id="sftp-ed-lang" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-orange-500/15 text-orange-400 border border-orange-500/30">TEXT</span>
+            <span id="sftp-ed-mode" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">chmod 0644</span>
+            <span id="sftp-ed-lint-pill" class="hidden text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full"></span>
+          </div>
+          <p class="text-[11px] text-slate-400">Ctrl+S to save &bull; Original file permissions are preserved on save</p>
+        </div>
+      </div>
+      <button type="button" onclick="SftpEditorModal.close()" class="text-slate-400 hover:text-white text-lg leading-none">✕</button>
+    </div>
+
+    <!-- Line-Numbered Syntax-Highlighted Editor Workspace -->
+    <div class="flex-1 flex bg-[#0b0f17] min-h-0 relative overflow-hidden font-mono text-[13px] leading-[20px]">
+      <div id="sftp-ed-gutter" class="w-12 py-3 px-2 bg-[#070a0f] border-r border-slate-800 text-right text-slate-500 select-none overflow-hidden shrink-0"><div>1</div></div>
+      <div class="relative flex-1 h-full overflow-hidden">
+        <pre id="sftp-ed-highlight-wrap" aria-hidden="true" class="pointer-events-none absolute inset-0 m-0 p-3 overflow-hidden whitespace-pre font-mono text-[13px] leading-[20px] text-slate-200"><code id="sftp-ed-highlight"></code></pre>
+        <textarea id="sftp-ed-textarea" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
+          oninput="SftpEditorModal.syncView()"
+          onscroll="SftpEditorModal.syncScroll()"
+          onkeydown="SftpEditorModal.handleKeyDown(event)"
+          class="absolute inset-0 w-full h-full m-0 p-3 bg-transparent text-transparent caret-orange-400 selection:bg-orange-500/30 font-mono text-[13px] leading-[20px] whitespace-pre overflow-auto outline-none resize-none"></textarea>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between px-5 py-3.5 border-t border-[#242c38] bg-[#0d1117] shrink-0">
+      <button type="button" onclick="SftpEditorModal.close()" class="px-4 py-1.5 rounded-[10px] text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition">
+        Close
+      </button>
+      <button type="button" id="btn-sftp-ed-save" onclick="SftpEditorModal.save()" class="px-5 py-1.5 rounded-[10px] text-xs font-bold bg-orange-600 hover:bg-orange-500 text-white transition shadow-lg">
+        Save File
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- SFTP Chmod Permissions Inspector Modal -->
+<div id="modal-sftp-chmod" class="hidden fixed inset-0 z-[10075] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
+  <div class="bg-[#13171f] border border-[#242c38] rounded-[10px] shadow-2xl max-w-md w-full overflow-hidden text-slate-200">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-[#242c38] bg-[#0d1117]">
+      <div>
+        <h3 class="text-sm font-bold text-white">File & Folder Permissions (chmod)</h3>
+        <p class="text-[11px] text-slate-400 font-mono">Target: <span id="sftp-chmod-target" class="text-orange-400 font-semibold"></span></p>
+      </div>
+      <button type="button" onclick="SftpChmodModal.close()" class="text-slate-400 hover:text-white text-lg leading-none">✕</button>
+    </div>
+
+    <div class="p-5 space-y-4">
+      <div class="flex flex-wrap gap-1.5">
+        <button type="button" onclick="SftpChmodModal.setPreset('0600')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-orange-500/20 hover:text-orange-300 border border-slate-700 text-[11px] font-mono transition">0600 Private</button>
+        <button type="button" onclick="SftpChmodModal.setPreset('0644')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-orange-500/20 hover:text-orange-300 border border-slate-700 text-[11px] font-mono transition">0644 File</button>
+        <button type="button" onclick="SftpChmodModal.setPreset('0755')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-orange-500/20 hover:text-orange-300 border border-slate-700 text-[11px] font-mono transition">0755 Exec / Dir</button>
+        <button type="button" onclick="SftpChmodModal.setPreset('0775')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-orange-500/20 hover:text-orange-300 border border-slate-700 text-[11px] font-mono transition">0775 Group</button>
+      </div>
+
+      <div class="border border-slate-800 rounded-lg overflow-hidden bg-[#0b0f17]">
+        <table class="w-full text-center text-xs">
+          <thead class="bg-slate-900 text-[11px] uppercase text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="py-2 px-3 text-left">Scope</th>
+              <th class="py-2 px-3">Read (4)</th>
+              <th class="py-2 px-3">Write (2)</th>
+              <th class="py-2 px-3">Execute (1)</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/70">
+            <tr>
+              <td class="py-2 px-3 text-left font-semibold text-slate-300">Owner</td>
+              <td><input type="checkbox" id="chk-perm-owner-r" onchange="SftpChmodModal.syncFromMatrix()" class="accent-orange-500 cursor-pointer"></td>
+              <td><input type="checkbox" id="chk-perm-owner-w" onchange="SftpChmodModal.syncFromMatrix()" class="accent-orange-500 cursor-pointer"></td>
+              <td><input type="checkbox" id="chk-perm-owner-x" onchange="SftpChmodModal.syncFromMatrix()" class="accent-orange-500 cursor-pointer"></td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3 text-left font-semibold text-slate-300">Group</td>
+              <td><input type="checkbox" id="chk-perm-group-r" onchange="SftpChmodModal.syncFromMatrix()" class="accent-orange-500 cursor-pointer"></td>
+              <td><input type="checkbox" id="chk-perm-group-w" onchange="SftpChmodModal.syncFromMatrix()" class="accent-orange-500 cursor-pointer"></td>
+              <td><input type="checkbox" id="chk-perm-group-x" onchange="SftpChmodModal.syncFromMatrix()" class="accent-orange-500 cursor-pointer"></td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3 text-left font-semibold text-slate-300">Public</td>
+              <td><input type="checkbox" id="chk-perm-public-r" onchange="SftpChmodModal.syncFromMatrix()" class="accent-orange-500 cursor-pointer"></td>
+              <td><input type="checkbox" id="chk-perm-public-w" onchange="SftpChmodModal.syncFromMatrix()" class="accent-orange-500 cursor-pointer"></td>
+              <td><input type="checkbox" id="chk-perm-public-x" onchange="SftpChmodModal.syncFromMatrix()" class="accent-orange-500 cursor-pointer"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex-1">
+          <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1">Octal Mode</label>
+          <input type="text" id="sftp-chmod-octal" maxlength="4" oninput="SftpChmodModal.syncFromOctal(this.value)" class="w-full bg-[#0b0f17] border border-slate-700 focus:border-orange-500 rounded-[10px] px-3 py-2 text-sm font-mono text-white outline-none" />
+        </div>
+        <div class="text-right">
+          <span class="block text-[11px] font-bold uppercase text-slate-400 mb-1">Symbolic</span>
+          <span id="sftp-chmod-rwx-preview" class="inline-block px-3 py-2 rounded-[10px] bg-slate-900 border border-slate-800 font-mono text-sm text-orange-400">rw-r--r--</span>
+        </div>
+      </div>
+
+      <label id="sftp-chmod-recursive-wrap" class="hidden flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+        <input type="checkbox" id="sftp-chmod-recursive" class="accent-orange-500">
+        <span>Apply recursively to all contents inside selected folder (<code class="text-orange-400 font-mono">chmod -R</code>)</span>
+      </label>
+    </div>
+
+    <div class="flex justify-end gap-2 px-5 py-3.5 border-t border-[#242c38] bg-[#0d1117]">
+      <button type="button" onclick="SftpChmodModal.close()" class="px-3.5 py-1.5 rounded-[10px] text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition">Cancel</button>
+      <button type="button" id="btn-sftp-chmod-apply" onclick="SftpChmodModal.apply()" class="px-4 py-1.5 rounded-[10px] text-xs font-bold bg-orange-600 hover:bg-orange-500 text-white transition shadow-lg">Apply Permissions</button>
+    </div>
+  </div>
+</div>
+
+<!-- SFTP Ultra-Confirmed Delete Modal -->
+<div id="modal-sftp-delete" class="hidden fixed inset-0 z-[10080] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
+  <div class="bg-[#13171f] border border-rose-500/40 rounded-[10px] shadow-2xl max-w-lg w-full overflow-hidden text-slate-200">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-[#242c38] bg-[#0d1117]">
+      <div class="flex items-center gap-2.5 text-rose-400">
+        <span class="text-lg">⚠️</span>
+        <h3 class="text-sm font-bold">Permanent SFTP Deletion — Ultra Confirmation</h3>
+      </div>
+      <button type="button" onclick="SftpDeleteModal.close()" class="text-slate-400 hover:text-white text-lg leading-none">✕</button>
+    </div>
+
+    <div class="p-5 space-y-4 text-xs">
+      <p class="text-slate-300 leading-relaxed">
+        There is <strong>no Recycle Bin</strong> over SFTP. Once executed, the following item(s) will be permanently erased from the remote host:
+      </p>
+
+      <div id="sftp-del-paths-list" class="max-h-36 overflow-y-auto bg-[#0b0f17] border border-slate-800 rounded-lg p-3 font-mono"></div>
+
+      <div id="sftp-del-nested-info" class="hidden p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 font-mono text-[11px]"></div>
+
+      <label class="flex items-start gap-2.5 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-200 cursor-pointer select-none">
+        <input type="checkbox" id="sftp-del-ack-chk" onchange="SftpDeleteModal.validateGate()" class="mt-0.5 accent-rose-500 cursor-pointer">
+        <span>I have verified the path(s) above and understand this action permanently deletes data from the remote server.</span>
+      </label>
+
+      <div id="sftp-del-type-wrap" class="hidden space-y-1.5">
+        <label id="sftp-del-type-prompt" for="sftp-del-type-input" class="block text-slate-300"></label>
+        <input type="text" id="sftp-del-type-input" autocomplete="off" oninput="SftpDeleteModal.validateGate()" placeholder="Type confirmation text..." class="w-full bg-[#0b0f17] border border-slate-700 focus:border-rose-500 rounded-[10px] px-3 py-2 text-xs font-mono text-white outline-none" />
+      </div>
+    </div>
+
+    <div class="flex justify-end gap-2 px-5 py-3.5 border-t border-[#242c38] bg-[#0d1117]">
+      <button type="button" onclick="SftpDeleteModal.close()" class="px-3.5 py-1.5 rounded-[10px] text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition">Cancel</button>
+      <button type="button" id="btn-sftp-del-confirm" disabled onclick="SftpDeleteModal.execute()" class="opacity-40 cursor-not-allowed px-4 py-1.5 rounded-[10px] text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition shadow-lg">
+        Permanently Delete
       </button>
     </div>
   </div>
