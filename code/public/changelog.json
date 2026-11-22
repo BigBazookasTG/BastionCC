@@ -1,9 +1,35 @@
 [
   {
-    "version": "v2.0.0",
+    "version": "v2.0.2",
     "date": "November 2026",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
+    "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+    "title": "Docker Volume Inspector, Threat IP Activity Drill-Down & Clean Compose Exports",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Docker Volume Inspector: Audits /var/lib/docker/volumes (including nested subfolders), flags 64-character SHA-256 anonymous volumes, links mounts to active/stopped containers, calculates recursive _data timestamps and sizes, and locks attached volumes against deletion."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Threat IP Activity Breakdown Modal: Clickable offender hit counts open a multi-day timeline categorizing HTTP status codes (401, 403, 404, 429, 5xx), SSH/auth failures, and WAF/IDS events with direct IP and /24 ban actions."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Threat Scanner Precision Filtering: Eliminated browser User-Agent version quads (e.g. Chrome/156.0.0.0) and 2xx/3xx HTTP responses from threat triage queues."
+      },
+      {
+        "tag": "UI / UX",
+        "text": "Clean Compose Exports: Filtered baked-in base image environment variables (PATH, NODE_VERSION, GPG_KEY, etc.) out of View as Compose by default with an optional toggle to include them."
+      }
+    ]
+  },
+  {
+    "version": "v2.0.0",
+    "date": "November 2026",
+    "badge": "STABLE",
+    "borderColor": "border-blue-500",
     "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
     "title": "BastionCC 2.0: Full SFTP Suite, Isolated Container PTY, Scheduled Restarts & Log Cleaner",
     "changes": [
