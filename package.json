@@ -1,6 +1,6 @@
 {
   "name": "server-dashboard",
-  "version": "2.0",
+  "version": "2.0.2",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js"
