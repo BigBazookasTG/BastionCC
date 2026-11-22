@@ -392,6 +392,25 @@
         </div>
     </div>
 
+    <div id="threat-breakdown-modal" class="fixed inset-0 z-[86] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm hidden p-4" role="dialog" aria-modal="true">
+        <div class="bg-white dark:bg-darkNav p-6 rounded-xl w-full max-w-3xl shadow-2xl border border-accent/50 relative flex flex-col max-h-[85vh]">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-200 dark:border-slate-800 pb-3 shrink-0">
+                <div>
+                    <h2 class="text-lg font-bold text-accent flex items-center" id="tbd-title">📊 Offender Activity Breakdown</h2>
+                    <p class="text-xs text-slate-500 font-mono mt-0.5" id="tbd-subtitle">Inspecting log events...</p>
+                </div>
+                <button onclick="closeThreatBreakdownModal()" class="text-slate-400 hover:text-rose-500 font-bold p-1 rounded">✕</button>
+            </div>
+
+            <div id="tbd-content" class="overflow-y-auto flex-1 font-mono text-xs text-slate-700 dark:text-slate-300"></div>
+
+            <div class="mt-5 pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
+                <div id="tbd-ban-actions" class="flex items-center gap-2"></div>
+                <button onclick="closeThreatBreakdownModal()" class="px-5 py-2 rounded-[10px] text-xs font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:opacity-90 transition ml-auto">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- DEEP SCAN MODAL -->
     <div id="deep-scan-modal" class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm hidden p-4">
         <div class="bg-white dark:bg-darkNav p-8 rounded-xl w-[500px] shadow-2xl border border-accent/50 relative">
@@ -519,7 +538,7 @@
             <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
             <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
                 <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
-                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v2.0 Changelog</span></div>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v2.0.2 Changelog</span></div>
             </div>
         </div>
     </nav>
@@ -555,6 +574,14 @@
                                 <line x1="12" y1="22" x2="12" y2="12" />
                             </svg>
                             <span>Compose / Deploy</span>
+                        </button>
+                        <button id="btn-volume-inspector" type="button" onclick="VolumeInspector.open()" class="group inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/90 hover:bg-slate-700/80 active:bg-slate-800 border border-slate-700/80 hover:border-orange-500/50 rounded-lg shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-orange-500/30">
+                            <svg class="w-3.5 h-3.5 shrink-0 text-slate-400 group-hover:text-orange-400 transition-colors duration-150" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                            </svg>
+                            <span>Volume Inspector</span>
                         </button>
                         <button id="btn-prune-images" onclick="PruneManager.open()" type="button" class="group inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/90 hover:bg-slate-700/80 active:bg-slate-800 border border-slate-700/80 hover:border-slate-600 rounded-lg shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-amber-500/30">
                             <svg class="w-3.5 h-3.5 shrink-0 text-slate-400 group-hover:text-amber-400 transition-colors duration-150" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -1389,11 +1416,13 @@
                 if (e.key === 'Escape' && !document.getElementById('pin-reset-modal').classList.contains('hidden')) closePinReset();
                 if (e.key === 'Escape' && !document.getElementById('totp-modal').classList.contains('hidden')) document.getElementById('totp-modal').classList.add('hidden');
                 if (e.key === 'Escape' && !document.getElementById('whois-modal').classList.contains('hidden')) closeWhoisModal();
+                if (e.key === 'Escape' && !document.getElementById('threat-breakdown-modal').classList.contains('hidden')) closeThreatBreakdownModal();
                 if (e.key === 'Escape' && !document.getElementById('defense-modal').classList.contains('hidden')) closeDefenseModal();
                 if (e.key === 'Escape' && !document.getElementById('abuseipdb-modal').classList.contains('hidden')) closeAbuseIpDbModal();
                 if (e.key === 'Escape' && !document.getElementById('threat-map-modal').classList.contains('hidden')) closeThreatMapModal();
                 if (e.key === 'Escape' && window.ScheduleRestartManager) ScheduleRestartManager.close();
                 if (e.key === 'Escape' && typeof closeExportComposeModal === 'function') closeExportComposeModal();
+                if (e.key === 'Escape' && window.VolumeInspector) VolumeInspector.close();
             });
 
             socket.on('ssh-keyboard-interactive', (data) => {
@@ -1462,6 +1491,7 @@
 
             // Threat scanner responses
             socket.on('log-threats-result', handleLogThreatsResult);
+            socket.on('threat-ip-breakdown-result', handleThreatIpBreakdownResult);
             socket.on('block-threat-result', handleBlockThreatResult);
             socket.on('whois-result', handleWhoisResult);
             socket.on('scan-old-logs-result', (data) => { if (window.LogCleaner) LogCleaner.onScanResult(data); });
@@ -1602,7 +1632,12 @@
                 return `
                     <tr id="${rowId}" class="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition">
                         <td class="px-3 py-2.5 font-bold text-slate-800 dark:text-slate-200 text-xs">${escapeHtml(displayIp)}</td>
-                        <td class="px-3 py-2.5 text-center"><span class="px-2 py-0.5 rounded font-bold text-xs bg-rose-500/10 text-rose-500 border border-rose-500/30">${t.count}</span></td>
+                        <td class="px-3 py-2.5 text-center">
+                            <button type="button" onclick="openThreatBreakdownModal('${t.ip}', ${t.count}, ${idx}, ${isHostSelf}, ${isSudo})" title="Click to inspect error types & multi-day timeline" class="px-2.5 py-0.5 rounded font-bold text-xs bg-rose-500/10 text-rose-500 hover:text-white border border-rose-500/30 hover:border-orange-500 hover:bg-orange-500/20 transition cursor-pointer inline-flex items-center space-x-1">
+                                <span>${t.count}</span>
+                                <span class="text-[10px] opacity-75">↗</span>
+                            </button>
+                        </td>
                         <td class="px-3 py-2.5" id="geo-cell-${idx}">
                             <button onclick="lookupWhois('${t.ip}', 'geo-cell-${idx}')" class="px-2.5 py-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-accent hover:text-white transition text-[11px] font-semibold flex items-center space-x-1">
                                 <span>🌐</span><span>Lookup WHOIS</span>
@@ -1716,6 +1751,121 @@
         }
 
         function closeWhoisModal() { document.getElementById('whois-modal').classList.add('hidden'); }
+
+        let _activeBreakdownContext = null;
+
+        function _formatUkDateTime(ms) {
+            if (!ms) return 'N/A';
+            const d = new Date(ms);
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function _formatSpanBadge(row) {
+            if (!row.firstMs || !row.lastMs) {
+                return `<span class="text-slate-400">No timestamps</span>`;
+            }
+            if (row.spanDays <= 1) {
+                const diffMins = Math.round((row.lastMs - row.firstMs) / 60000);
+                const sub = row.count === 1 ? 'single hit' : (diffMins < 1 ? '< 1m burst' : `${diffMins}m burst`);
+                return `<span class="px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 font-semibold">1 day</span> <span class="text-[10px] text-slate-400">(${sub})</span>`;
+            }
+            return `<span class="px-2 py-0.5 rounded bg-rose-500/15 text-rose-400 border border-rose-500/30 font-semibold">${row.spanDays} days</span> <span class="text-[10px] text-slate-400">(${row.activeDays} active)</span>`;
+        }
+
+        function openThreatBreakdownModal(ip, reportedCount, rowIndex, isHostSelf, isSudo) {
+            if (!activeLogSource || !activeLogSource.path || !socket) return;
+            _activeBreakdownContext = { ip, reportedCount, rowIndex, isHostSelf, isSudo };
+
+            const maskedIp = maskDemoText(ip);
+            document.getElementById('tbd-title').innerHTML = `📊 Offender Activity: <span class="text-slate-900 dark:text-white font-mono ml-2">${escapeHtml(maskedIp)}</span>`;
+            document.getElementById('tbd-subtitle').textContent = `Source: ${maskDemoText(activeLogSource.path)} • Scanning matched events...`;
+            document.getElementById('tbd-content').innerHTML = `
+                <div class="py-10 text-center text-slate-400 animate-pulse">
+                    Parsing timestamps and classifying error signatures for ${escapeHtml(maskedIp)}...
+                </div>
+            `;
+
+            const actionsEl = document.getElementById('tbd-ban-actions');
+            if (actionsEl) {
+                if (!isHostSelf && isSudo) {
+                    actionsEl.innerHTML = `
+                        <button type="button" onclick="closeThreatBreakdownModal(); promptDefenseModal('${ip}', 'ip', ${rowIndex})" class="px-3 py-1.5 text-xs font-bold rounded-[10px] bg-rose-500/15 border border-rose-500/40 text-rose-400 hover:bg-rose-500 hover:text-white transition">🛡️ Block IP</button>
+                        <button type="button" onclick="closeThreatBreakdownModal(); promptDefenseModal('${ip}', 'subnet', ${rowIndex})" class="px-3 py-1.5 text-xs font-bold rounded-[10px] bg-amber-500/15 border border-amber-500/40 text-amber-400 hover:bg-amber-500 hover:text-white transition">Block /24</button>
+                    `;
+                } else {
+                    actionsEl.innerHTML = '';
+                }
+            }
+
+            document.getElementById('threat-breakdown-modal').classList.remove('hidden');
+            socket.emit('inspect-threat-ip', {
+                type: activeLogSource.type,
+                path: activeLogSource.path,
+                ip
+            });
+        }
+
+        function closeThreatBreakdownModal() {
+            document.getElementById('threat-breakdown-modal').classList.add('hidden');
+            _activeBreakdownContext = null;
+        }
+
+        function handleThreatIpBreakdownResult({ ip, totalHits, firstMs, lastMs, activeDays, spanDays, breakdown, error }) {
+            if (!_activeBreakdownContext || _activeBreakdownContext.ip !== ip) return;
+            const contentEl = document.getElementById('tbd-content');
+            const subEl = document.getElementById('tbd-subtitle');
+
+            if (error) {
+                if (subEl) subEl.textContent = 'Inspection failed';
+                contentEl.innerHTML = `<div class="p-4 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400">Error: ${escapeHtml(error)}</div>`;
+                return;
+            }
+
+            if (!breakdown || breakdown.length === 0) {
+                if (subEl) subEl.textContent = `Source: ${maskDemoText(activeLogSource.path)}`;
+                contentEl.innerHTML = `<div class="py-8 text-center text-slate-400">No matching error lines found in the current log window.</div>`;
+                return;
+            }
+
+            const overallWindow = (firstMs && lastMs)
+                ? `${_formatUkDateTime(firstMs)} → ${_formatUkDateTime(lastMs)} (${spanDays} day${spanDays === 1 ? '' : 's'}, ${activeDays} active)`
+                : 'Timestamps unavailable in log format';
+
+            if (subEl) {
+                subEl.textContent = `${totalHits} matched event${totalHits === 1 ? '' : 's'} • ${overallWindow}`;
+            }
+
+            const rowsHtml = breakdown.map(row => `
+                <tr class="border-b border-slate-200 dark:border-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition" title="${escapeHtml(maskDemoText(row.sample || ''))}">
+                    <td class="px-3 py-2.5 font-bold text-slate-800 dark:text-slate-100">${escapeHtml(row.type)}</td>
+                    <td class="px-3 py-2.5 text-center"><span class="px-2 py-0.5 rounded font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">${row.count}</span></td>
+                    <td class="px-3 py-2.5 text-center text-slate-400">${row.share}%</td>
+                    <td class="px-3 py-2.5 text-slate-500 dark:text-slate-400 whitespace-nowrap">${_formatUkDateTime(row.firstMs)}</td>
+                    <td class="px-3 py-2.5 text-slate-500 dark:text-slate-400 whitespace-nowrap">${_formatUkDateTime(row.lastMs)}</td>
+                    <td class="px-3 py-2.5 whitespace-nowrap">${_formatSpanBadge(row)}</td>
+                </tr>
+            `).join('');
+
+            contentEl.innerHTML = `
+                <div class="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg">
+                    <table class="w-full text-left text-xs">
+                        <thead class="text-[11px] uppercase bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+                            <tr>
+                                <th class="px-3 py-2">Error Type</th>
+                                <th class="px-3 py-2 text-center">Hits</th>
+                                <th class="px-3 py-2 text-center">Share</th>
+                                <th class="px-3 py-2">First Seen</th>
+                                <th class="px-3 py-2">Last Seen</th>
+                                <th class="px-3 py-2">Span</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-2.5">Tip: Hover any row to inspect a sample matched log line.</p>
+            `;
+        }
 
         function promptDefenseModal(ip, mode, rowIndex) {
             pendingDefense = { ip, mode, rowIndex };
@@ -4170,7 +4320,25 @@ function _yamlEscapeScalar(val) {
   return s;
 }
 
-window.buildComposeFromEditForm = function() {
+const _DEFAULT_IMAGE_ENV_EXACT = new Set([
+  'PATH', 'HOSTNAME', 'HOME', 'PWD', 'TERM', 'SHLVL', '_',
+  'LANG', 'LC_ALL', 'LC_CTYPE', 'LANGUAGE', 'DEBIAN_FRONTEND',
+  'GPG_KEY', 'GPG_KEYS', 'PKG_RELEASE', 'DYNPKG_RELEASE',
+  'GOPATH', 'JAVA_HOME', 'GEM_HOME', 'BUNDLE_SILENCE_ROOT_WARNING',
+  'BUNDLE_APP_CONFIG', 'RUSTUP_HOME', 'CARGO_HOME',
+  'PYTHONUNBUFFERED', 'PYTHONDONTWRITEBYTECODE',
+  'DOTNET_RUNNING_IN_CONTAINER', 'COMPOSER_ALLOW_SUPERUSER', 'COMPOSER_HOME'
+]);
+
+const _DEFAULT_IMAGE_ENV_PREFIX_REGEX = /^(NODE|YARN|PYTHON|PIP|GOLANG|JAVA|NGINX|NJS|PHP|PHPIZE|RUBY|GEM|BUNDLE|RUST|RUSTUP|CARGO|DOTNET|ASPNET|COMPOSER|GOSU|S6)_(VERSION|MAJOR|MINOR|PATCH|URL|ASC_URL|SHA256|INI_DIR|CFLAGS|CPPFLAGS|LDFLAGS|DEPS|BEHAVIOUR_IF_STAGE2_FAILS|CMD_WAIT_FOR_SERVICES_MAXTIME|KEEP_ENV|LOGGING|DISABLE_PIP_VERSION_CHECK|ROOT_USER_ACTION)$/;
+
+function _isDefaultImageEnv(key) {
+  const k = String(key || '').trim();
+  if (!k) return true;
+  return _DEFAULT_IMAGE_ENV_EXACT.has(k) || _DEFAULT_IMAGE_ENV_PREFIX_REGEX.test(k);
+}
+
+window.buildComposeFromEditForm = function(includeBaseEnv = false) {
   const cfg = window._spCurrentCfg || {};
   const rawName = (cfg.name || _spCurContainerId || 'app').replace(/^\//, '').trim();
   const serviceName = rawName.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'app';
@@ -4181,7 +4349,7 @@ window.buildComposeFromEditForm = function() {
   const envs = Array.from(document.querySelectorAll('#sp-env-list .sp-grid-row')).map(r => ({
     key: r.querySelector('.sp-env-k').value.trim(),
     value: r.querySelector('.sp-env-v').value
-  })).filter(e => e.key);
+  })).filter(e => e.key && (includeBaseEnv || !_isDefaultImageEnv(e.key)));
 
   const ports = Array.from(document.querySelectorAll('#sp-port-list .sp-grid-row')).map(r => ({
     hostPort: r.querySelector('.sp-port-h').value.trim(),
@@ -4271,8 +4439,16 @@ window.buildComposeFromEditForm = function() {
   return lines.join('\n') + '\n';
 };
 
+window.refreshExportedCompose = function() {
+  const includeBase = !!(document.getElementById('chk-export-base-env')?.checked);
+  const codeEl = document.getElementById('export-compose-yaml');
+  if (codeEl) codeEl.value = buildComposeFromEditForm(includeBase);
+};
+
 window.openExportComposeModal = function() {
-  const yaml = buildComposeFromEditForm();
+  const chk = document.getElementById('chk-export-base-env');
+  if (chk) chk.checked = false;
+  const yaml = buildComposeFromEditForm(false);
   const cfg = window._spCurrentCfg || {};
   const titleEl = document.getElementById('export-compose-container-name');
   const codeEl = document.getElementById('export-compose-yaml');
@@ -5120,6 +5296,294 @@ window.SftpDeleteModal = {
   }
 };
 
+// ============================================================================
+// DOCKER VOLUME INSPECTOR CONTROLLER
+// ============================================================================
+window.VolumeInspector = {
+  volumes: [],
+  activeFilter: 'all', // 'all' | 'anonymous' | 'orphaned'
+  searchQuery: '',
+  isDeleting: false,
+
+  open() {
+    const modal = document.getElementById('modal-volume-inspector');
+    if (!modal) return;
+    this.activeFilter = 'all';
+    this.searchQuery = '';
+    const searchEl = document.getElementById('vol-insp-search');
+    if (searchEl) searchEl.value = '';
+    modal.classList.remove('hidden');
+    this.scan();
+  },
+
+  close() {
+    const modal = document.getElementById('modal-volume-inspector');
+    if (modal) modal.classList.add('hidden');
+  },
+
+  setFilter(filter) {
+    this.activeFilter = filter;
+    const masterCb = document.getElementById('chk-vol-select-all');
+    if (masterCb) masterCb.checked = false;
+    this.render();
+  },
+
+  onSearch(val) {
+    this.searchQuery = String(val || '').toLowerCase().trim();
+    this.render();
+  },
+
+  _getFilteredVolumes() {
+    return this.volumes.filter(v => {
+      if (this.activeFilter === 'anonymous' && !v.isAnonymous) return false;
+      if (this.activeFilter === 'orphaned' && v.isAttached) return false;
+      if (this.searchQuery) {
+        const attachedNames = (v.attachedTo || []).map(a => `${a.container} ${a.destination}`).join(' ').toLowerCase();
+        const hay = `${v.relPath} ${attachedNames}`.toLowerCase();
+        if (!hay.includes(this.searchQuery)) return false;
+      }
+      return true;
+    });
+  },
+
+  toggleSelectAll(checked) {
+    // Only unattached volumes have checkboxes — attached volumes can never be selected
+    document.querySelectorAll('.vol-item-chk:not(:disabled)').forEach(cb => {
+      cb.checked = checked;
+    });
+    this.updateSelection();
+  },
+
+  updateSelection() {
+    const checkedBoxes = Array.from(document.querySelectorAll('.vol-item-chk:checked'));
+    const selectableBoxes = document.querySelectorAll('.vol-item-chk:not(:disabled)');
+    const masterCb = document.getElementById('chk-vol-select-all');
+    const delBtn = document.getElementById('btn-vol-delete-selected');
+    const delText = document.getElementById('vol-delete-btn-text');
+
+    if (masterCb) {
+      masterCb.disabled = selectableBoxes.length === 0;
+      masterCb.checked = selectableBoxes.length > 0 && checkedBoxes.length === selectableBoxes.length;
+    }
+
+    if (delBtn && delText) {
+      if (checkedBoxes.length > 0) {
+        delBtn.disabled = false;
+        delBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+        delText.textContent = `Delete Unreferenced (${checkedBoxes.length})`;
+      } else {
+        delBtn.disabled = true;
+        delBtn.classList.add('opacity-40', 'cursor-not-allowed');
+        delText.textContent = 'Delete Selected';
+      }
+    }
+  },
+
+  async scan() {
+    const tbody = document.getElementById('vol-inspector-tbody');
+    const summaryEl = document.getElementById('vol-insp-summary');
+    const masterCb = document.getElementById('chk-vol-select-all');
+    if (masterCb) masterCb.checked = false;
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="6" class="py-10 text-center text-slate-400 animate-pulse font-sans">Scanning /var/lib/docker/volumes and container mounts over SSH...</td></tr>';
+    }
+    if (summaryEl) summaryEl.textContent = 'Scanning host...';
+    this.updateSelection();
+
+    try {
+      const res = await fetch('/api/docker/volumes/inspect');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to inspect volumes');
+
+      this.volumes = data.volumes || [];
+      this.render();
+    } catch (err) {
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-rose-400 font-sans">Error: ${escapeHtml(err.message)}</td></tr>`;
+      }
+      if (summaryEl) summaryEl.textContent = 'Scan failed';
+    }
+  },
+
+  _formatModDate(ms) {
+    if (!ms) return '<span class="text-slate-500">Unknown</span>';
+    const d = new Date(ms);
+    const pad = (n) => String(n).padStart(2, '0');
+    const datePart = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const diffDays = Math.floor((Date.now() - ms) / 86400000);
+    const rel = diffDays === 0 ? 'today' : diffDays === 1 ? '1d ago' : `${diffDays}d ago`;
+    return `<div>${datePart}</div><div class="text-[10px] text-slate-500">${rel}</div>`;
+  },
+
+  render() {
+    const tbody = document.getElementById('vol-inspector-tbody');
+    const summaryEl = document.getElementById('vol-insp-summary');
+    if (!tbody) return;
+
+    const totalCount = this.volumes.length;
+    const anonCount = this.volumes.filter(v => v.isAnonymous).length;
+    const orphanCount = this.volumes.filter(v => !v.isAttached).length;
+    const orphanBytes = this.volumes.filter(v => !v.isAttached).reduce((acc, v) => acc + (v.sizeBytes || 0), 0);
+
+    // Update filter tab counts & active styles
+    const tabDefs = [
+      { id: 'all', label: `All (${totalCount})` },
+      { id: 'anonymous', label: `Anonymous (${anonCount})` },
+      { id: 'orphaned', label: `Unreferenced (${orphanCount})` }
+    ];
+    tabDefs.forEach(t => {
+      const btn = document.getElementById(`vol-tab-${t.id}`);
+      if (!btn) return;
+      btn.textContent = t.label;
+      if (this.activeFilter === t.id) {
+        btn.className = 'px-3 py-1 rounded-lg text-xs font-semibold bg-orange-600 text-white shadow transition';
+      } else {
+        btn.className = 'px-3 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+      }
+    });
+
+    if (summaryEl) {
+      summaryEl.textContent = `${totalCount} volumes • ${orphanCount} unreferenced (${sftpFormatBytes(orphanBytes)} reclaimable)`;
+    }
+
+    const filtered = this._getFilteredVolumes();
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="py-10 text-center text-slate-400 font-sans">No volumes match the current filter.</td></tr>';
+      this.updateSelection();
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(v => {
+      const displayName = maskDemoText(v.name);
+      const displayFolder = v.folder ? maskDemoText(v.folder) : '';
+      const typeBadge = v.isAnonymous
+        ? '<span class="px-1.5 py-0.5 text-[10px] rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-sans font-semibold">Anonymous</span>'
+        : '<span class="px-1.5 py-0.5 text-[10px] rounded bg-sky-500/10 text-sky-400 border border-sky-500/25 font-sans font-semibold">Named</span>';
+
+      const folderBadge = displayFolder
+        ? `<span class="px-1.5 py-0.5 text-[10px] rounded bg-slate-800 text-orange-300 border border-slate-700 font-mono">${escapeHtml(displayFolder)}/</span>`
+        : '';
+
+      let attachedHtml = '';
+      if (v.isAttached) {
+        attachedHtml = `<div class="space-y-1">${v.attachedTo.map(a => {
+          const dotCls = a.running ? 'bg-emerald-500' : 'bg-amber-500';
+          const stateTxt = a.running ? '' : ` <span class="text-[10px] text-amber-400">(${escapeHtml(a.status)})</span>`;
+          return `
+            <div class="flex items-center gap-1.5 text-xs">
+              <span class="w-2 h-2 rounded-full ${dotCls} shrink-0"></span>
+              <span class="font-semibold text-slate-200">${escapeHtml(maskDemoText(a.container))}</span>${stateTxt}
+              ${a.destination ? `<span class="text-slate-500 text-[11px] truncate">→ ${escapeHtml(maskDemoText(a.destination))}</span>` : ''}
+            </div>
+          `;
+        }).join('')}</div>`;
+      } else {
+        attachedHtml = '<span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded bg-amber-500/10 text-amber-400 border border-amber-500/25 font-sans font-semibold">Unreferenced</span>';
+      }
+
+      const checkboxHtml = v.isAttached
+        ? '<span class="inline-flex items-center justify-center text-slate-600 cursor-not-allowed" title="Protected: Volume is attached to a container and cannot be deleted">🔒</span>'
+        : `<input type="checkbox" class="vol-item-chk rounded bg-slate-800 border-slate-600 text-orange-500 focus:ring-orange-500/40 cursor-pointer" value="${escapeHtml(v.volDir)}" onchange="VolumeInspector.updateSelection()" />`;
+
+      const deleteActionHtml = v.isAttached
+        ? '<span class="px-2 py-1 text-[10px] font-sans font-semibold rounded bg-slate-800/80 text-slate-500 border border-slate-700/70 cursor-not-allowed select-none" title="Attached volumes cannot be deleted">In Use</span>'
+        : `<button type="button" onclick="VolumeInspector.deleteSingle('${escapeHtml(v.volDir)}', '${escapeHtml(v.relPath)}')" title="Delete Unreferenced Volume" class="p-1.5 rounded bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 transition">
+             <svg class="w-3.5 h-3.5 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+           </button>`;
+
+      return `
+        <tr class="hover:bg-slate-800/40 text-slate-300 transition">
+          <td class="py-2.5 px-3 text-center">${checkboxHtml}</td>
+          <td class="py-2.5 px-3 max-w-xs">
+            <div class="flex items-center gap-1.5 flex-wrap mb-1">
+              ${typeBadge}
+              ${folderBadge}
+            </div>
+            <div class="font-mono text-xs text-slate-200 break-all" title="${escapeHtml(maskDemoText(v.volDir))}">${escapeHtml(displayName)}</div>
+          </td>
+          <td class="py-2.5 px-3">${attachedHtml}</td>
+          <td class="py-2.5 px-3 whitespace-nowrap text-xs text-slate-300">${this._formatModDate(v.lastModifiedMs)}</td>
+          <td class="py-2.5 px-3 whitespace-nowrap font-bold text-amber-400">${sftpFormatBytes(v.sizeBytes)}</td>
+          <td class="py-2.5 px-3 text-right whitespace-nowrap">
+            <div class="inline-flex items-center gap-1.5">
+              <button type="button" onclick="VolumeInspector.browseData('${escapeHtml(v.dataDir)}')" title="Open _data directory in SFTP File Explorer" class="px-2 py-1 rounded bg-slate-800 hover:bg-orange-500/20 text-slate-300 hover:text-orange-300 border border-slate-700 hover:border-orange-500/40 font-sans text-[11px] font-semibold transition">
+                Browse _data
+              </button>
+              ${deleteActionHtml}
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    this.updateSelection();
+  },
+
+  browseData(dataDir) {
+    if (!dataDir) return;
+    currentSftpPath = dataDir;
+    if (window.SftpExplorer && SftpExplorer.panes && SftpExplorer.panes.left) {
+      SftpExplorer.panes.left.path = dataDir;
+    }
+    this.close();
+    switchTab('files');
+  },
+
+  async deleteSingle(volDir, relPath) {
+    if (this.isDeleting) return;
+    const target = this.volumes.find(v => v.volDir === volDir);
+    if (!target || target.isAttached) {
+      return showToast('Blocked: Attached volumes cannot be deleted.', 'error');
+    }
+    if (!confirm(`Permanently delete unreferenced volume "${relPath}"?\n\nThis will erase all data inside ${volDir}/_data.`)) {
+      return;
+    }
+    await this._executeDelete([volDir]);
+  },
+
+  async deleteSelected() {
+    if (this.isDeleting) return;
+    const selectedDirs = Array.from(document.querySelectorAll('.vol-item-chk:checked'))
+      .map(cb => cb.value)
+      .filter(dir => {
+        const v = this.volumes.find(item => item.volDir === dir);
+        return v && !v.isAttached;
+      });
+
+    if (selectedDirs.length === 0) return;
+    if (!confirm(`Permanently delete ${selectedDirs.length} unreferenced volume${selectedDirs.length === 1 ? '' : 's'}?\n\nAll data inside their _data directories will be permanently erased.`)) {
+      return;
+    }
+    await this._executeDelete(selectedDirs);
+  },
+
+  async _executeDelete(volDirs) {
+    this.isDeleting = true;
+    const delBtn = document.getElementById('btn-vol-delete-selected');
+    const delText = document.getElementById('vol-delete-btn-text');
+    if (delBtn) delBtn.disabled = true;
+    if (delText) delText.textContent = 'Deleting...';
+
+    try {
+      const res = await fetch('/api/docker/volumes/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ volumes: volDirs })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete volume(s)');
+
+      showToast(`Deleted ${data.deletedCount} unreferenced volume${data.deletedCount === 1 ? '' : 's'}.`);
+      await this.scan();
+    } catch (err) {
+      showToast('Volume Delete Error: ' + err.message, 'error');
+    } finally {
+      this.isDeleting = false;
+      this.updateSelection();
+    }
+  }
+};
+
 /* BASTIONCC_V198_SCRIPT_END */
 </script>
 <!-- BASTIONCC_V198_MODALS_START -->
@@ -5912,10 +6376,16 @@ window.SftpDeleteModal = {
       <textarea id="export-compose-yaml" readonly rows="18" class="w-full bg-[#0b0f17] border border-slate-700 rounded-[10px] p-4 text-xs font-mono text-emerald-300 leading-relaxed outline-none resize-none"></textarea>
     </div>
 
-    <div class="flex items-center justify-between px-5 py-3.5 border-t border-[#242c38] bg-[#0d1117]">
-      <button type="button" onclick="closeExportComposeModal()" class="px-3.5 py-1.5 rounded-[10px] text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition">
-        Close
-      </button>
+    <div class="flex items-center justify-between px-5 py-3.5 border-t border-[#242c38] bg-[#0d1117] gap-3 flex-wrap">
+      <div class="flex items-center gap-4">
+        <button type="button" onclick="closeExportComposeModal()" class="px-3.5 py-1.5 rounded-[10px] text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition">
+          Close
+        </button>
+        <label class="flex items-center gap-2 text-xs text-slate-400 hover:text-slate-200 cursor-pointer select-none">
+          <input type="checkbox" id="chk-export-base-env" onchange="refreshExportedCompose()" class="accent-orange-500 cursor-pointer">
+          <span>Include base image ENV vars</span>
+        </label>
+      </div>
       <div class="flex items-center gap-2">
         <button type="button" onclick="copyExportedCompose()" class="px-3.5 py-1.5 rounded-[10px] text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-orange-400 border border-orange-500/30 transition">
           Copy YAML
@@ -6118,6 +6588,89 @@ window.SftpDeleteModal = {
       <button type="button" onclick="SftpDeleteModal.close()" class="px-3.5 py-1.5 rounded-[10px] text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition">Cancel</button>
       <button type="button" id="btn-sftp-del-confirm" disabled onclick="SftpDeleteModal.execute()" class="opacity-40 cursor-not-allowed px-4 py-1.5 rounded-[10px] text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition shadow-lg">
         Permanently Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Docker Volume Inspector Modal -->
+<div id="modal-volume-inspector" class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm hidden p-4" role="dialog" aria-modal="true">
+  <div class="relative w-full max-w-5xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[86vh] text-slate-200">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/95 shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="p-2 rounded-lg bg-orange-500/10 text-orange-400 border border-orange-500/25">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="5" rx="9" ry="3" />
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-base font-semibold text-white tracking-wide">Docker Volume Inspector</h3>
+          <p class="text-xs text-slate-400">Audit <code class="font-mono text-orange-300">/var/lib/docker/volumes</code> (including subfolders) for anonymous and unreferenced volumes.</p>
+        </div>
+      </div>
+      <button type="button" onclick="VolumeInspector.close()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+      </button>
+    </div>
+
+    <!-- Filter & Search Controls -->
+    <div class="px-6 py-3 border-b border-slate-800 bg-slate-950/50 flex items-center justify-between gap-3 flex-wrap shrink-0">
+      <div class="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
+        <button type="button" id="vol-tab-all" onclick="VolumeInspector.setFilter('all')" class="px-3 py-1 rounded-lg text-xs font-semibold bg-orange-600 text-white shadow transition">All (0)</button>
+        <button type="button" id="vol-tab-anonymous" onclick="VolumeInspector.setFilter('anonymous')" class="px-3 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">Anonymous (0)</button>
+        <button type="button" id="vol-tab-orphaned" onclick="VolumeInspector.setFilter('orphaned')" class="px-3 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">Unreferenced (0)</button>
+      </div>
+
+      <div class="flex items-center gap-2.5 flex-1 justify-end min-w-[240px]">
+        <input type="text" id="vol-insp-search" oninput="VolumeInspector.onSearch(this.value)" placeholder="Filter by volume, folder, or container..." class="w-full max-w-xs bg-[#0b0f17] border border-slate-700 focus:border-orange-500 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 outline-none" />
+        <button type="button" onclick="VolumeInspector.scan()" class="text-xs text-accent hover:underline inline-flex items-center gap-1 shrink-0 font-semibold">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Rescan
+        </button>
+      </div>
+    </div>
+
+    <!-- Volume Table -->
+    <div class="p-6 overflow-y-auto flex-1 space-y-3">
+      <div class="flex items-center justify-between text-xs text-slate-400">
+        <span id="vol-insp-summary" class="font-mono">Scanning host...</span>
+        <span class="text-[11px] text-slate-500">🔒 Volumes attached to any running or stopped container are locked from deletion.</span>
+      </div>
+
+      <div class="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/40">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 bg-slate-800/30 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <th class="py-2.5 px-3 w-10 text-center">
+                <input type="checkbox" id="chk-vol-select-all" class="rounded bg-slate-800 border-slate-600 text-orange-500 focus:ring-orange-500/40 cursor-pointer" onchange="VolumeInspector.toggleSelectAll(this.checked)" title="Select all unreferenced volumes" />
+              </th>
+              <th class="py-2.5 px-3">Volume Name / Subfolder</th>
+              <th class="py-2.5 px-3">Attached To</th>
+              <th class="py-2.5 px-3">Last Modified</th>
+              <th class="py-2.5 px-3">Size</th>
+              <th class="py-2.5 px-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="vol-inspector-tbody" class="text-xs divide-y divide-slate-800/60 font-mono">
+            <tr>
+              <td colspan="6" class="py-10 text-center text-slate-500 font-sans">Scanning /var/lib/docker/volumes over SSH...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-900/95 shrink-0">
+      <button type="button" onclick="VolumeInspector.close()" class="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors">
+        Close
+      </button>
+      <button id="btn-vol-delete-selected" type="button" disabled onclick="VolumeInspector.deleteSelected()" class="opacity-40 cursor-not-allowed inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded-lg shadow-sm border border-rose-500/30 transition-all">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /></svg>
+        <span id="vol-delete-btn-text">Delete Selected</span>
       </button>
     </div>
   </div>
