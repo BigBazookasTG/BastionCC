@@ -583,9 +583,11 @@ io.on('connection', (socket) => {
         
         const pipelineCmd = `
             { ${logSourceCmd} ; } \
-              | grep -aEi "401|403|429|failed|invalid|unauthorized|denied|auth failure|error|found|disconnected|refused|rejected|ban|drop|status code|remote_ip" \
+              | grep -aEi "(^|[^0-9.])(400|401|403|404|405|429|444|499|500|502|503|504)([^0-9.]|$)|failed password|invalid user|authentication failure|auth failure|unsuccessful [12]fa|authentication attempt|unauthorized|access forbidden|forbidden by rule|permission denied|access denied|limiting requests|rate limit|too many requests|\\] found |disconnected from authenticating|connection closed by authenticating|banner exchange|bad protocol version|modsecurity|ufw block|refused|rejected" \
+              | grep -avE '("status"[[:space:]]*:[[:space:]]*[23][0-9]{2}[^0-9]|HTTP/[123](\\.[0-9])?"[[:space:]]+[23][0-9]{2}[^0-9]|\\][[:space:]]+(-[[:space:]]+)?[23][0-9]{2}[[:space:]]+[23][0-9]{2}[^0-9])' \
+              | sed -E 's#/[0-9]{1,3}(\\.[0-9]{1,3}){3}##g' \
               | grep -aEo "([0-9]{1,3}\\.){3}[0-9]{1,3}" \
-              | grep -vE "^(127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[0-1])\\.|192\\.168\\.|0\\.0\\.0\\.0|255\\.255\\.255\\.255)" \
+              | grep -vE "^(127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[0-1])\\.|192\\.168\\.|0\\.|255\\.)|\\.0\\.0\\.0$" \
               | sort \
               | uniq -c \
               | sort -nr \
@@ -651,6 +653,222 @@ io.on('connection', (socket) => {
                 }
 
                 socket.emit('log-threats-result', { logPath, threats });
+            });
+        });
+    });
+
+    // --- DETAILED HIT COUNT LOG PARSING PREP WORK---
+    const _MONTH_MAP = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+    };
+
+    function _parseLogLineTimestamp(line) {
+        // 1. ISO-8601 / Systemd short-iso / Docker (2026-11-22T14:10:05 or 2026-11-22 14:10:05)
+        let m = line.match(/\b(20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])[T ]([01]\d|2[0-3]):([0-5]\d):([0-5]\d)/);
+        if (m) {
+            return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+        }
+
+        // 2. Nginx error.log format (2026/11/22 14:10:05)
+        m = line.match(/\b(20\d{2})\/(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01]) ([01]\d|2[0-3]):([0-5]\d):([0-5]\d)/);
+        if (m) {
+            return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+        }
+
+        // 3. Nginx / Apache Common Log format (22/Nov/2026:14:10:05)
+        m = line.match(/\b(0[1-9]|[12]\d|3[01])\/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\/(20\d{2}):([01]\d|2[0-3]):([0-5]\d):([0-5]\d)/i);
+        if (m) {
+            const mon = _MONTH_MAP[m[2].toLowerCase()];
+            return Date.UTC(+m[3], mon, +m[1], +m[4], +m[5], +m[6]);
+        }
+
+        // 4. Traditional Syslog / Auth.log (Nov 22 14:10:05)
+        m = line.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+([1-9]|[12]\d|3[01])\s+([01]\d|2[0-3]):([0-5]\d):([0-5]\d)\b/i);
+        if (m) {
+            const now = new Date();
+            let year = now.getUTCFullYear();
+            const mon = _MONTH_MAP[m[1].toLowerCase()];
+            let ts = Date.UTC(year, mon, +m[2], +m[3], +m[4], +m[5]);
+            if (ts - now.getTime() > 2 * 86400000) {
+                ts = Date.UTC(year - 1, mon, +m[2], +m[3], +m[4], +m[5]);
+            }
+            return ts;
+        }
+
+        // 5. Caddy / JSON Unix epoch seconds ("ts":1732284605.123)
+        m = line.match(/"ts"\s*:\s*(\d{10})(?:\.\d+)?/);
+        if (m) {
+            return parseInt(m[1], 10) * 1000;
+        }
+
+        return null;
+    }
+
+    const _HTTP_STATUS_LABELS = {
+        '400': 'HTTP 400 Bad Request',
+        '401': 'HTTP 401 Unauthorized',
+        '403': 'HTTP 403 Forbidden',
+        '404': 'HTTP 404 Not Found',
+        '405': 'HTTP 405 Method Not Allowed',
+        '429': 'HTTP 429 Too Many Requests',
+        '444': 'HTTP 444 No Response (Drop)',
+        '499': 'HTTP 499 Client Closed Request',
+        '500': 'HTTP 500 Internal Server Error',
+        '502': 'HTTP 502 Bad Gateway',
+        '503': 'HTTP 503 Service Unavailable',
+        '504': 'HTTP 504 Gateway Timeout'
+    };
+
+    function _classifyLogLineError(line) {
+        // Strip IPv4 addresses and timestamps so ports/octets are never misread as HTTP status codes
+        const scrubbed = line
+            .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, ' ')
+            .replace(/\b\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b/g, ' ')
+            .replace(/\b\d{2}\/[A-Za-z]{3}\/\d{4}:\d{2}:\d{2}:\d{2}(?:\s*[+-]\d{4})?\b/g, ' ');
+
+        const statusMatch =
+            scrubbed.match(/(?:HTTP\/[123](?:\.\d)?"?\s+|"(?:status|statusCode|status_code|code|resp_status|http_status)"\s*:\s*|\b(?:status|status_code|code|http|resp|response)[=:\s]+|\bHTTP\s+)([45]\d{2})\b/i) ||
+            scrubbed.match(/\]\s+(?:-\s+)?([45]\d{2})(?:\s+[45]\d{2})?\s+(?:-|"[A-Z]+|[A-Z]+\s)/) ||
+            scrubbed.match(/"[A-Z]{3,8}\s+[^"]*"\s+([45]\d{2})\b/);
+
+        if (statusMatch) {
+            const code = statusMatch[1];
+            if (_HTTP_STATUS_LABELS[code]) return _HTTP_STATUS_LABELS[code];
+            if (code.startsWith('4')) return `HTTP ${code} Client Error`;
+            if (code.startsWith('5')) return `HTTP ${code} Server Error`;
+        }
+
+        const okStatusMatch =
+            scrubbed.match(/(?:HTTP\/[123](?:\.\d)?"?\s+|"(?:status|statusCode|status_code|resp_status|http_status)"\s*:\s*)\b([23]\d{2})\b/i) ||
+            scrubbed.match(/\]\s+(?:-\s+)?([23]\d{2})\s+[23]\d{2}\b/);
+        if (okStatusMatch) return null;
+
+        const lower = line.toLowerCase();
+        if (lower.includes('access forbidden') || lower.includes('forbidden by rule')) return 'HTTP 403 Forbidden (Rule)';
+        if (lower.includes('limiting requests') || lower.includes('rate limit') || lower.includes('too many requests')) return 'HTTP 429 Rate Limited';
+        if (lower.includes('no such file or directory') || lower.includes('not found')) return 'HTTP 404 Not Found';
+        if (lower.includes('no live upstreams') || lower.includes('bad gateway')) return 'HTTP 502 Bad Gateway';
+        if (lower.includes('upstream timed out') || lower.includes('gateway time')) return 'HTTP 504 Gateway Timeout';
+        if (lower.includes('invalid user')) return 'SSH Invalid User';
+        if (lower.includes('failed password')) return 'SSH Failed Password';
+        if (lower.includes('unsuccessful 1fa') || lower.includes('unsuccessful 2fa') || lower.includes('authentication attempt') || lower.includes('authentication failure') || lower.includes('auth failure')) return 'Authentication Failure';
+        if (lower.includes('maximum authentication') || lower.includes('too many authentication')) return 'Max Auth Attempts';
+        if (lower.includes('banner exchange') || lower.includes('bad protocol version')) return 'SSH Protocol / Banner Probe';
+        if (lower.includes('disconnected from authenticating') || lower.includes('connection closed by authenticating')) return 'Pre-Auth Disconnect';
+        if (lower.includes('modsecurity') || lower.includes('waf')) return 'WAF / ModSecurity Block';
+        if (lower.includes('] found ') || (lower.includes('fail2ban') && lower.includes('found'))) return 'Fail2ban Detection (Found)';
+        if (lower.includes('crowdsec') || lower.includes('fail2ban') || /\bban\b/.test(lower)) return 'IDS / Ban Trigger';
+        if (lower.includes('ufw block') || /\bdrop\b/.test(lower)) return 'Firewall Packet Drop';
+        if (lower.includes('permission denied') || lower.includes('access denied') || /\bdenied\b/.test(lower)) return 'Access / Permission Denied';
+        if (lower.includes('unauthorized')) return 'HTTP 401 Unauthorized';
+        if (lower.includes('connection refused') || /\brefused\b/.test(lower)) return 'Connection Refused';
+        if (lower.includes('connection reset') || lower.includes('reset by peer')) return 'Connection Reset';
+        if (/\brejected\b/.test(lower)) return 'Connection Rejected';
+        if (/\berror\b/.test(lower)) return 'Service Error';
+        if (/\bfailed\b/.test(lower)) return 'General Failure';
+        return 'Other Matched Event';
+    }
+
+    socket.on('inspect-threat-ip', ({ type, path: logPath, ip }) => {
+        if (!sshClient || !net.isIPv4(ip)) {
+            return socket.emit('threat-ip-breakdown-result', { ip, error: 'Invalid IPv4 address or SSH not connected.' });
+        }
+        if (typeof logPath !== 'string' || !/^[\/a-zA-Z0-9_.-]+$/.test(logPath)) {
+            return socket.emit('threat-ip-breakdown-result', { ip, error: 'Invalid log source path.' });
+        }
+
+        const safePath = type === 'systemd' ? logPath : path.posix.normalize(logPath);
+        const logSourceCmd = type === 'systemd'
+            ? (safePath === 'syslog'
+                ? 'journalctl -n 10000 --no-pager 2>/dev/null || cat /var/log/syslog 2>/dev/null || cat /var/log/messages 2>/dev/null'
+                : `journalctl -u ${_shQuote(safePath)} -n 10000 --no-pager 2>/dev/null || journalctl -n 10000 --no-pager 2>/dev/null`)
+            : `cat ${_shQuote(safePath)} 2>/dev/null || tail -n 10000 ${_shQuote(safePath)} 2>/dev/null`;
+
+        const escapedIp = ip.replace(/\./g, '\\.');
+        const cmd = `
+            { ${logSourceCmd} ; } \
+              | grep -aEi "(^|[^0-9.])(400|401|403|404|405|429|444|499|500|502|503|504)([^0-9.]|$)|failed password|invalid user|authentication failure|auth failure|unsuccessful [12]fa|authentication attempt|unauthorized|access forbidden|forbidden by rule|permission denied|access denied|limiting requests|rate limit|too many requests|\\] found |disconnected from authenticating|connection closed by authenticating|banner exchange|bad protocol version|modsecurity|ufw block|refused|rejected" \
+              | grep -avE '("status"[[:space:]]*:[[:space:]]*[23][0-9]{2}[^0-9]|HTTP/[123](\\.[0-9])?"[[:space:]]+[23][0-9]{2}[^0-9]|\\][[:space:]]+(-[[:space:]]+)?[23][0-9]{2}[[:space:]]+[23][0-9]{2}[^0-9])' \
+              | grep -aE "(^|[^0-9./])${escapedIp}([^0-9.]|$)" \
+              | tail -n 5000
+        `;
+
+        sshClient.exec(cmd, (err, stream) => {
+            if (err) {
+                return socket.emit('threat-ip-breakdown-result', { ip, error: err.message });
+            }
+            let out = '';
+            stream.on('data', d => { out += d.toString('utf8'); });
+            stream.stderr.on('data', () => {});
+            stream.on('close', () => {
+                const lines = out.split('\n').map(l => l.trim()).filter(Boolean);
+                const groups = new Map();
+                const allDays = new Set();
+                let globalFirstMs = null;
+                let globalLastMs = null;
+                let totalHits = 0;
+
+                for (const line of lines) {
+                    const errorType = _classifyLogLineError(line);
+                    if (!errorType) continue;
+                    totalHits++;
+                    const ts = _parseLogLineTimestamp(line);
+                    let entry = groups.get(errorType);
+                    if (!entry) {
+                        entry = {
+                            type: errorType,
+                            count: 0,
+                            firstMs: null,
+                            lastMs: null,
+                            days: new Set(),
+                            sample: line.slice(0, 260)
+                        };
+                        groups.set(errorType, entry);
+                    }
+                    entry.count++;
+
+                    if (ts !== null) {
+                        const dayKey = new Date(ts).toISOString().slice(0, 10);
+                        entry.days.add(dayKey);
+                        allDays.add(dayKey);
+
+                        if (entry.firstMs === null || ts < entry.firstMs) entry.firstMs = ts;
+                        if (entry.lastMs === null || ts > entry.lastMs) entry.lastMs = ts;
+                        if (globalFirstMs === null || ts < globalFirstMs) globalFirstMs = ts;
+                        if (globalLastMs === null || ts > globalLastMs) globalLastMs = ts;
+                    }
+                }
+
+                const calcSpanDays = (firstMs, lastMs, activeDays) => {
+                    if (firstMs === null || lastMs === null) return activeDays || 0;
+                    const startDay = Date.UTC(new Date(firstMs).getUTCFullYear(), new Date(firstMs).getUTCMonth(), new Date(firstMs).getUTCDate());
+                    const endDay = Date.UTC(new Date(lastMs).getUTCFullYear(), new Date(lastMs).getUTCMonth(), new Date(lastMs).getUTCDate());
+                    return Math.max(1, Math.round((endDay - startDay) / 86400000) + 1);
+                };
+
+                const breakdown = Array.from(groups.values())
+                    .map(g => ({
+                        type: g.type,
+                        count: g.count,
+                        share: totalHits > 0 ? Math.round((g.count / totalHits) * 100) : 0,
+                        firstMs: g.firstMs,
+                        lastMs: g.lastMs,
+                        activeDays: g.days.size,
+                        spanDays: calcSpanDays(g.firstMs, g.lastMs, g.days.size),
+                        sample: g.sample
+                    }))
+                    .sort((a, b) => b.count - a.count);
+
+                socket.emit('threat-ip-breakdown-result', {
+                    ip,
+                    totalHits,
+                    firstMs: globalFirstMs,
+                    lastMs: globalLastMs,
+                    activeDays: allDays.size,
+                    spanDays: calcSpanDays(globalFirstMs, globalLastMs, allDays.size),
+                    breakdown
+                });
             });
         });
     });
@@ -3273,6 +3491,256 @@ app.delete('/api/docker/schedules/:id', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ============================================================================
+// DOCKER VOLUME INSPECTOR (ANONYMOUS, SUBFOLDER & ORPHANED VOLUME MANAGER)
+// ============================================================================
+const _VOLUMES_BASE_DIR = '/var/lib/docker/volumes';
+const _ANONYMOUS_VOL_REGEX = /^[a-f0-9]{64}$/i;
+
+function _normalizeVolumeDir(rawDir) {
+  if (typeof rawDir !== 'string' || rawDir.includes('\0')) return null;
+  const trimmed = rawDir.trim();
+  if (!trimmed.startsWith(_VOLUMES_BASE_DIR + '/')) return null;
+  if (!/^\/[a-zA-Z0-9_./-]+$/.test(trimmed)) return null;
+  const norm = path.posix.normalize(trimmed);
+  if (!norm.startsWith(_VOLUMES_BASE_DIR + '/')) return null;
+  const rel = norm.slice(_VOLUMES_BASE_DIR.length + 1);
+  if (!rel || rel === 'metadata.db' || rel === 'backingFsBlockDev') return null;
+  return norm;
+}
+
+async function _collectContainerVolumeAttachments(ssh) {
+  const inspectCmd = [
+    'export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin";',
+    'CID=$(docker ps -aq 2>/dev/null);',
+    '[ -n "$CID" ] && docker inspect $CID --format',
+    '\'{{$cName := .Name}}{{$cStatus := .State.Status}}{{$cRun := .State.Running}}{{range .Mounts}}{{$cName}}===BCC==={{$cStatus}}===BCC==={{$cRun}}===BCC==={{.Type}}===BCC==={{.Name}}===BCC==={{.Source}}===BCC==={{.Destination}}{{"\\n"}}{{end}}\'',
+    '2>/dev/null || true'
+  ].join(' ');
+
+  const raw = await _bccDockerExec(ssh, inspectCmd);
+  const attachments = [];
+
+  raw.split('\n').forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const parts = trimmed.split('===BCC===');
+    if (parts.length < 7) return;
+
+    const containerName = (parts[0] || '').replace(/^\//, '').trim();
+    const status = (parts[1] || 'unknown').trim();
+    const running = (parts[2] || '').trim() === 'true';
+    const mountType = (parts[3] || '').trim();
+    const volName = (parts[4] || '').trim();
+    const source = (parts[5] || '').trim();
+    const destination = (parts[6] || '').trim();
+
+    if (!containerName) return;
+    if (mountType === 'volume' || source.startsWith(_VOLUMES_BASE_DIR + '/')) {
+      attachments.push({
+        container: containerName,
+        status,
+        running,
+        volName,
+        source: source ? path.posix.normalize(source) : '',
+        destination
+      });
+    }
+  });
+
+  return attachments;
+}
+
+function _matchVolumeAttachments(volDir, dataDir, leafName, folder, attachments) {
+  const seen = new Set();
+  const matched = [];
+
+  for (const att of attachments) {
+    const bySource =
+      att.source === dataDir ||
+      att.source === volDir ||
+      (att.source && att.source.startsWith(volDir + '/'));
+    const byName = !folder && att.volName && att.volName === leafName;
+
+    if (bySource || byName) {
+      const key = `${att.container}:${att.destination}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        matched.push({
+          container: att.container,
+          status: att.status,
+          running: att.running,
+          destination: att.destination
+        });
+      }
+    }
+  }
+
+  return matched;
+}
+
+app.get('/api/docker/volumes/inspect', async (req, res) => {
+  try {
+    const ssh = _resolveSsh();
+    if (!ssh) return res.status(400).json({ error: 'No active SSH session detected.' });
+
+    const attachments = await _collectContainerVolumeAttachments(ssh);
+
+    const scanScript = `
+      export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin"
+      SUDO=""
+      if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+        SUDO="sudo -n"
+      fi
+
+      if [ -d "/var/lib/docker/volumes" ]; then
+        $SUDO find /var/lib/docker/volumes -mindepth 2 -maxdepth 4 -type d -name "_data" 2>/dev/null | while IFS= read -r DATA_DIR; do
+          VOL_DIR=$(dirname "$DATA_DIR")
+          MTIME=$($SUDO find "$DATA_DIR" -printf '%T@\n' 2>/dev/null | sort -nr | head -n 1 | cut -d. -f1)
+          [ -z "$MTIME" ] && MTIME=$($SUDO stat -c '%Y' "$DATA_DIR" 2>/dev/null || $SUDO stat -c '%Y' "$VOL_DIR" 2>/dev/null || echo 0)
+          SIZE_BYTES=$($SUDO du -sb "$DATA_DIR" 2>/dev/null | cut -f1 || echo 0)
+          printf '%s===BCC===%s===BCC===%s===BCC===%s\n' "$VOL_DIR" "$DATA_DIR" "$MTIME" "$SIZE_BYTES"
+        done
+      fi
+      echo "___BCC_VOL_LS___"
+      docker volume ls --format '{{.Name}}===BCC==={{.Driver}}' 2>/dev/null || true
+    `;
+
+    const rawOut = await _bccDockerExec(ssh, scanScript);
+    const [diskPart, lsPart] = rawOut.split('___BCC_VOL_LS___');
+
+    const registeredSet = new Set();
+    (lsPart || '').split('\n').forEach(line => {
+      const [name] = line.trim().split('===BCC===');
+      if (name && name.trim()) registeredSet.add(name.trim());
+    });
+
+    const volumes = [];
+    const seenDirs = new Set();
+
+    (diskPart || '').split('\n').forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const parts = trimmed.split('===BCC===');
+      if (parts.length < 4) return;
+
+      const volDir = _normalizeVolumeDir(parts[0]);
+      if (!volDir || seenDirs.has(volDir)) return;
+      seenDirs.add(volDir);
+
+      const dataDir = path.posix.normalize(parts[1] || `${volDir}/_data`);
+      const mtimeSec = parseInt(parts[2], 10) || 0;
+      const sizeBytes = parseInt(parts[3], 10) || 0;
+
+      const relPath = volDir.slice(_VOLUMES_BASE_DIR.length + 1);
+      const slashIdx = relPath.lastIndexOf('/');
+      const folder = slashIdx !== -1 ? relPath.slice(0, slashIdx) : '';
+      const leafName = slashIdx !== -1 ? relPath.slice(slashIdx + 1) : relPath;
+      const isAnonymous = _ANONYMOUS_VOL_REGEX.test(leafName);
+      const isDockerManaged = !folder && registeredSet.has(leafName);
+      const attachedTo = _matchVolumeAttachments(volDir, dataDir, leafName, folder, attachments);
+
+      volumes.push({
+        volDir,
+        dataDir,
+        relPath,
+        name: leafName,
+        folder,
+        isAnonymous,
+        isDockerManaged,
+        isAttached: attachedTo.length > 0,
+        attachedTo,
+        lastModifiedMs: mtimeSec > 0 ? mtimeSec * 1000 : null,
+        sizeBytes
+      });
+    });
+
+    // Sort unreferenced volumes first, then newest modified first
+    volumes.sort((a, b) => {
+      if (a.isAttached !== b.isAttached) return a.isAttached ? 1 : -1;
+      return (b.lastModifiedMs || 0) - (a.lastModifiedMs || 0);
+    });
+
+    res.json({ success: true, volumes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/docker/volumes/delete', async (req, res) => {
+  try {
+    const ssh = _resolveSsh();
+    if (!ssh) return res.status(400).json({ error: 'No active SSH session detected.' });
+
+    const targets = Array.isArray(req.body && req.body.volumes) ? req.body.volumes : [];
+    if (targets.length === 0) {
+      return res.status(400).json({ error: 'No volumes selected for deletion.' });
+    }
+
+    // Re-verify live container mounts immediately before deleting anything
+    const liveAttachments = await _collectContainerVolumeAttachments(ssh);
+    const blocked = [];
+    const safeToDelete = [];
+
+    for (const rawTarget of targets) {
+      const volDir = _normalizeVolumeDir(rawTarget);
+      if (!volDir) continue;
+
+      const dataDir = `${volDir}/_data`;
+      const relPath = volDir.slice(_VOLUMES_BASE_DIR.length + 1);
+      const slashIdx = relPath.lastIndexOf('/');
+      const folder = slashIdx !== -1 ? relPath.slice(0, slashIdx) : '';
+      const leafName = slashIdx !== -1 ? relPath.slice(slashIdx + 1) : relPath;
+
+      const attached = _matchVolumeAttachments(volDir, dataDir, leafName, folder, liveAttachments);
+      if (attached.length > 0) {
+        blocked.push({
+          relPath,
+          containers: attached.map(a => a.container)
+        });
+      } else {
+        safeToDelete.push({ volDir, leafName, folder, relPath });
+      }
+    }
+
+    if (blocked.length > 0 && safeToDelete.length === 0) {
+      const detail = blocked.map(b => `${b.relPath} (attached to ${b.containers.join(', ')})`).join('; ');
+      return res.status(409).json({
+        error: `Deletion blocked — volume is currently attached to a container: ${detail}`
+      });
+    }
+
+    let deletedCount = 0;
+    for (const item of safeToDelete) {
+      const qVolDir = _shQuote(item.volDir);
+      const qLeaf = _shQuote(item.leafName);
+      const rmCmd = !item.folder && _isValidContainerId(item.leafName)
+        ? `
+          export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin"
+          SUDO=""
+          if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then SUDO="sudo -n"; fi
+          docker volume rm ${qLeaf} >/dev/null 2>&1 || $SUDO rm -rf -- ${qVolDir}
+        `
+        : `
+          SUDO=""
+          if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then SUDO="sudo -n"; fi
+          $SUDO rm -rf -- ${qVolDir}
+        `;
+      await _runSshCmd(ssh, rmCmd);
+      deletedCount++;
+    }
+
+    res.json({
+      success: true,
+      deletedCount,
+      skippedAttached: blocked.length
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* BASTIONCC_V198_BACKEND_END */
 
 const { version } = require('../package.json');
