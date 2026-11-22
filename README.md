@@ -39,7 +39,11 @@
       From V2.0:
      - Modal exec for containers, no longer switches to terminal tab
      - Set restart policy per container if needed injects into crontab
-     - convert Docker run to Docker compose
+     - Convert Docker run to Docker compose
+   ~~~
+      From V2.0.2:
+     - Docker volume inspector / manager / viewer
+   ~~~
    
   
 ### Create "Macros" i.e command shortcuts you may use often, these will appear above the xterm terminal window and import Macro templates from your other servers to save having to recreate
@@ -68,6 +72,11 @@
 Version 2.0+
   - Clean rotated logs in /var/log and user added paths
   - Checks security threats in logs and ignores those already banned.
+
+Version 2.0.2
+  - Click on threat QTY for a detailed breakdown per threat type
+  - Hover over to see latest logged attempt
+  - Ignore Chrome 156.x.x.x in logs
 
   
 ### SFTP file management with drag and drop ability to transfer files.
