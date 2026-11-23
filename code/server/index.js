@@ -785,7 +785,7 @@ io.on('connection', (socket) => {
                 : `journalctl -u ${_shQuote(safePath)} -n 10000 --no-pager 2>/dev/null || journalctl -n 10000 --no-pager 2>/dev/null`)
             : `cat ${_shQuote(safePath)} 2>/dev/null || tail -n 10000 ${_shQuote(safePath)} 2>/dev/null`;
 
-        const escapedIp = ip.replace(/\./g, '\\.');
+        const escapedIp = ip.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const cmd = `
             { ${logSourceCmd} ; } \
               | grep -aEi "(^|[^0-9.])(400|401|403|404|405|429|444|499|500|502|503|504)([^0-9.]|$)|failed password|invalid user|authentication failure|auth failure|unsuccessful [12]fa|authentication attempt|unauthorized|access forbidden|forbidden by rule|permission denied|access denied|limiting requests|rate limit|too many requests|\\] found |disconnected from authenticating|connection closed by authenticating|banner exchange|bad protocol version|modsecurity|ufw block|refused|rejected" \
