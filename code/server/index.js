@@ -439,6 +439,7 @@ io.on('connection', (socket) => {
     let containerShellStream = null;
     let statsInterval = null; let dockerInterval = null; const activeUploads = new Map();
     let prevCpuTicks = null;
+    let sessionEpoch = 0;
 
     socket.emit('servers-list', getServers());
     
@@ -1543,11 +1544,21 @@ io.on('connection', (socket) => {
     });
 
     socket.on('connect-ssh', (config) => {
+        const epoch = ++sessionEpoch;
         _closeContainerShellStream();
-        if (sshClient) sshClient.end(); 
-        if (statsInterval) clearInterval(statsInterval); if (dockerInterval) clearInterval(dockerInterval);
-        activeShellStream = null; sshClient = new Client();
+        if (statsInterval) { clearInterval(statsInterval); statsInterval = null; }
+        if (dockerInterval) { clearInterval(dockerInterval); dockerInterval = null; }
+        activeUploads.clear();
+        activeShellStream = null;
+        sftpSession = null;
+
+        const prevClient = sshClient;
+        const client = new Client();
+        sshClient = client;
         prevCpuTicks = null;
+        if (prevClient) {
+            try { prevClient.end(); } catch (_) {}
+        }
         
         try {
             const pin = activePins.get(socket.id);
@@ -1562,22 +1573,46 @@ io.on('connection', (socket) => {
                 if (decryptedPassphrase) connectOpts.passphrase = decryptedPassphrase;
             }
 
-            sshClient.on('ready', () => {
-                socket.emit('ssh-status', { id: config.id, status: 'Connected' }); sshClient._host = config.host; 
-                sshClient.shell({ term: 'xterm-256color', cols: config.cols || 80, rows: config.rows || 24 }, (err, stream) => {
+            let localStatsInterval = null;
+            let localDockerInterval = null;
+
+            client.on('ready', () => {
+                if (epoch !== sessionEpoch || sshClient !== client) {
+                    try { client.end(); } catch (_) {}
+                    return;
+                }
+                socket.emit('ssh-status', { id: config.id, status: 'Connected', epoch: config.epoch || epoch });
+                client._host = config.host;
+
+                client.shell({ term: 'xterm-256color', cols: config.cols || 80, rows: config.rows || 24 }, (err, stream) => {
+                    if (epoch !== sessionEpoch || sshClient !== client) {
+                        if (stream) { try { stream.end(); } catch (_) {} }
+                        return;
+                    }
                     if (err) return socket.emit('terminal-data', '\r\nShell error.\r\n');
-                    activeShellStream = stream; stream.on('data', d => socket.emit('terminal-data', d.toString('utf-8'))); stream.on('close', () => activeShellStream = null);
+                    activeShellStream = stream;
+                    stream.on('data', d => {
+                        if (epoch === sessionEpoch) socket.emit('terminal-data', d.toString('utf-8'));
+                    });
+                    stream.on('close', () => {
+                        if (activeShellStream === stream) activeShellStream = null;
+                    });
                 });
 
                 // Server-side instantaneous poll - raw /proc/stat read & free -m
                 const statsCmd = `head -n 1 /proc/stat 2>/dev/null; echo "---MEM---"; free -m 2>/dev/null`;
 
-                statsInterval = setInterval(() => {
-                    sshClient.exec(statsCmd, (err, stream) => {
-                        if (err) return;
+                localStatsInterval = setInterval(() => {
+                    if (epoch !== sessionEpoch || sshClient !== client) {
+                        clearInterval(localStatsInterval);
+                        return;
+                    }
+                    client.exec(statsCmd, (err, stream) => {
+                        if (err || epoch !== sessionEpoch) return;
                         let raw = '';
                         stream.on('data', chunk => raw += chunk.toString());
                         stream.on('close', () => {
+                            if (epoch !== sessionEpoch) return;
                             try {
                                 const parts = raw.trim().split('---MEM---');
                                 const cpuLine = (parts[0] || '').trim();
@@ -1587,7 +1622,7 @@ io.on('connection', (socket) => {
                                 if (cpuLine.startsWith('cpu')) {
                                     const tokens = cpuLine.replace(/^cpu\s+/, '').trim().split(/\s+/).map(Number);
                                     if (tokens.length >= 4) {
-                                        const idle = (tokens[3] || 0) + (tokens[4] || 0); // idle + iowait
+                                        const idle = (tokens[3] || 0) + (tokens[4] || 0);
                                         const total = tokens.reduce((acc, v) => acc + (isNaN(v) ? 0 : v), 0);
 
                                         if (prevCpuTicks) {
@@ -1617,17 +1652,27 @@ io.on('connection', (socket) => {
                         });
                     });
                 }, 5000);
+                statsInterval = localStatsInterval;
 
                 if (config.dockerEnabled !== false) {
-                    dockerInterval = setInterval(() => {
-                        sshClient.exec(`echo "{\\"ps\\": [$(docker ps -a --format '{{json .}}' | paste -sd, - || echo "")], \\"stats\\": [$(docker stats --no-stream --format '{{json .}}' | paste -sd, - || echo "")]}"`, (err, stream) => {
-                            if (err) return; let dData = ''; stream.on('data', chunk => dData += chunk.toString());
-                            stream.on('close', () => { try { socket.emit('docker-data', JSON.parse(dData)); } catch(e){} });
+                    localDockerInterval = setInterval(() => {
+                        if (epoch !== sessionEpoch || sshClient !== client) {
+                            clearInterval(localDockerInterval);
+                            return;
+                        }
+                        client.exec(`echo "{\\"ps\\": [$(docker ps -a --format '{{json .}}' | paste -sd, - || echo "")], \\"stats\\": [$(docker stats --no-stream --format '{{json .}}' | paste -sd, - || echo "")]}"`, (err, stream) => {
+                            if (err || epoch !== sessionEpoch) return;
+                            let dData = '';
+                            stream.on('data', chunk => dData += chunk.toString());
+                            stream.on('close', () => {
+                                if (epoch !== sessionEpoch) return;
+                                try { socket.emit('docker-data', JSON.parse(dData)); } catch(e){}
+                            });
                         });
                     }, 5000);
+                    dockerInterval = localDockerInterval;
                 }
 
-                // --- REPLACE THIS SFTP BLOCK ---
                 function _sftpModeToOctal(mode) {
                     const m = (Number(mode) || 0) & 0o7777;
                     return '0' + (m & 0o777).toString(8).padStart(3, '0');
@@ -1667,8 +1712,9 @@ io.on('connection', (socket) => {
                     return normPath.split('/').filter(Boolean).length < 2;
                 }
 
-                sshClient.sftp((err, sftp) => {
-                    if (err) return; sftpSession = sftp;
+                client.sftp((err, sftp) => {
+                    if (err || epoch !== sessionEpoch || sshClient !== client) return;
+                    sftpSession = sftp;
                     const sftpEvents = [
                         'sftp-list', 'sftp-download', 'sftp-upload-start', 'sftp-upload-chunk', 'sftp-upload-end',
                         'sftp-read-file', 'sftp-write-file', 'sftp-chmod', 'sftp-preflight-delete', 'sftp-delete'
@@ -1676,12 +1722,14 @@ io.on('connection', (socket) => {
                     sftpEvents.forEach(evt => socket.removeAllListeners(evt));
 
                     socket.on('sftp-list', (payload) => {
+                        if (epoch !== sessionEpoch) return;
                         const rawPath = (typeof payload === 'object' && payload !== null) ? payload.path : payload;
                         const pane = (typeof payload === 'object' && payload !== null && payload.pane) ? payload.pane : 'left';
                         const serverId = (typeof payload === 'object' && payload !== null && payload.serverId) ? payload.serverId : config.id;
                         const targetPath = _normalizeSftpPath(rawPath) || '/root';
 
                         sftp.readdir(targetPath, (err, list) => {
+                            if (epoch !== sessionEpoch) return;
                             if (err) {
                                 return socket.emit('sftp-list-data', { path: targetPath, pane, serverId, items: [], error: err.message });
                             }
@@ -1707,10 +1755,12 @@ io.on('connection', (socket) => {
                     });
 
                     socket.on('sftp-read-file', ({ filePath, pane = 'left' }) => {
+                        if (epoch !== sessionEpoch) return;
                         const normPath = _normalizeSftpPath(filePath);
                         if (!normPath) return socket.emit('sftp-read-file-result', { error: 'Invalid file path.' });
 
                         sftp.stat(normPath, (statErr, stats) => {
+                            if (epoch !== sessionEpoch) return;
                             if (statErr) return socket.emit('sftp-read-file-result', { error: statErr.message });
                             if (stats.isDirectory()) return socket.emit('sftp-read-file-result', { error: 'Cannot open a directory in the text editor.' });
                             if (stats.size > 2 * 1024 * 1024) {
@@ -1720,8 +1770,11 @@ io.on('connection', (socket) => {
                             const chunks = [];
                             const rs = sftp.createReadStream(normPath);
                             rs.on('data', chunk => chunks.push(Buffer.from(chunk)));
-                            rs.on('error', readErr => socket.emit('sftp-read-file-result', { error: readErr.message }));
+                            rs.on('error', readErr => {
+                                if (epoch === sessionEpoch) socket.emit('sftp-read-file-result', { error: readErr.message });
+                            });
                             rs.on('end', () => {
+                                if (epoch !== sessionEpoch) return;
                                 const buf = Buffer.concat(chunks);
                                 if (buf.includes(0)) {
                                     return socket.emit('sftp-read-file-result', { error: 'Binary file detected. Use Download instead.' });
@@ -1740,18 +1793,22 @@ io.on('connection', (socket) => {
                     });
 
                     socket.on('sftp-write-file', ({ filePath, content, originalMode, pane = 'left' }) => {
+                        if (epoch !== sessionEpoch) return;
                         const normPath = _normalizeSftpPath(filePath);
                         if (!normPath || typeof content !== 'string') {
                             return socket.emit('sftp-write-file-result', { error: 'Invalid file path or content payload.' });
                         }
 
                         const ws = sftp.createWriteStream(normPath, { flags: 'w' });
-                        ws.on('error', writeErr => socket.emit('sftp-write-file-result', { error: writeErr.message }));
+                        ws.on('error', writeErr => {
+                            if (epoch === sessionEpoch) socket.emit('sftp-write-file-result', { error: writeErr.message });
+                        });
                         ws.on('close', () => {
+                            if (epoch !== sessionEpoch) return;
                             const permBits = (typeof originalMode === 'number') ? (originalMode & 0o7777) : 0;
                             if (permBits > 0) {
                                 sftp.chmod(normPath, permBits, () => {
-                                    socket.emit('sftp-write-file-result', { success: true, pane, filePath: normPath });
+                                    if (epoch === sessionEpoch) socket.emit('sftp-write-file-result', { success: true, pane, filePath: normPath });
                                 });
                             } else {
                                 socket.emit('sftp-write-file-result', { success: true, pane, filePath: normPath });
@@ -1761,6 +1818,7 @@ io.on('connection', (socket) => {
                     });
 
                     socket.on('sftp-chmod', ({ paths, modeOctal, recursive = false, pane = 'left' }) => {
+                        if (epoch !== sessionEpoch) return;
                         if (!Array.isArray(paths) || paths.length === 0) {
                             return socket.emit('sftp-chmod-result', { error: 'No target paths selected.' });
                         }
@@ -1778,13 +1836,15 @@ io.on('connection', (socket) => {
                             const octalArg = '0' + (modeInt & 0o7777).toString(8).padStart(3, '0');
                             const quotedArgs = safePaths.map(_shQuote).join(' ');
                             const cmd = `chmod -R ${octalArg} -- ${quotedArgs} < /dev/null && echo "___BCC_CHMOD_OK___"`;
-                            sshClient.exec(cmd, (execErr, stream) => {
+                            client.exec(cmd, (execErr, stream) => {
+                                if (epoch !== sessionEpoch) return;
                                 if (execErr) return socket.emit('sftp-chmod-result', { error: execErr.message });
                                 let out = '';
                                 let errOut = '';
                                 stream.on('data', d => { out += d.toString('utf8'); });
                                 stream.stderr.on('data', d => { errOut += d.toString('utf8'); });
                                 stream.on('close', (code) => {
+                                    if (epoch !== sessionEpoch) return;
                                     if (code !== 0 || !out.includes('___BCC_CHMOD_OK___')) {
                                         return socket.emit('sftp-chmod-result', { error: errOut.trim() || `chmod exited with code ${code}` });
                                     }
@@ -1794,11 +1854,13 @@ io.on('connection', (socket) => {
                         } else {
                             let idx = 0;
                             const next = () => {
+                                if (epoch !== sessionEpoch) return;
                                 if (idx >= safePaths.length) {
                                     return socket.emit('sftp-chmod-result', { success: true, pane, count: safePaths.length });
                                 }
                                 const target = safePaths[idx++];
                                 sftp.chmod(target, modeInt, (chErr) => {
+                                    if (epoch !== sessionEpoch) return;
                                     if (chErr) return socket.emit('sftp-chmod-result', { error: `${target}: ${chErr.message}` });
                                     next();
                                 });
@@ -1808,6 +1870,7 @@ io.on('connection', (socket) => {
                     });
 
                     socket.on('sftp-preflight-delete', ({ paths, pane = 'left' }) => {
+                        if (epoch !== sessionEpoch) return;
                         if (!Array.isArray(paths) || paths.length === 0) {
                             return socket.emit('sftp-preflight-delete-result', { nestedCount: 0, pane });
                         }
@@ -1817,12 +1880,14 @@ io.on('connection', (socket) => {
                         }
                         const quotedArgs = safePaths.map(_shQuote).join(' ');
                         const cmd = `find ${quotedArgs} -mindepth 1 2>/dev/null | wc -l`;
-                        sshClient.exec(cmd, (execErr, stream) => {
+                        client.exec(cmd, (execErr, stream) => {
+                            if (epoch !== sessionEpoch) return;
                             if (execErr) return socket.emit('sftp-preflight-delete-result', { nestedCount: 0, pane });
                             let out = '';
                             stream.on('data', d => { out += d.toString('utf8'); });
                             stream.stderr.on('data', () => {});
                             stream.on('close', () => {
+                                if (epoch !== sessionEpoch) return;
                                 const nestedCount = parseInt(out.trim(), 10) || 0;
                                 socket.emit('sftp-preflight-delete-result', { nestedCount, pane });
                             });
@@ -1830,6 +1895,7 @@ io.on('connection', (socket) => {
                     });
 
                     socket.on('sftp-delete', ({ paths, pane = 'left' }) => {
+                        if (epoch !== sessionEpoch) return;
                         if (!Array.isArray(paths) || paths.length === 0) {
                             return socket.emit('sftp-delete-result', { error: 'No files or folders selected for deletion.' });
                         }
@@ -1843,13 +1909,15 @@ io.on('connection', (socket) => {
                         const quotedArgs = uniquePaths.map(_shQuote).join(' ');
                         const cmd = `rm -rf -- ${quotedArgs} < /dev/null && echo "___BCC_SFTP_DEL_OK___"`;
 
-                        sshClient.exec(cmd, (execErr, stream) => {
+                        client.exec(cmd, (execErr, stream) => {
+                            if (epoch !== sessionEpoch) return;
                             if (execErr) return socket.emit('sftp-delete-result', { error: execErr.message });
                             let out = '';
                             let errOut = '';
                             stream.on('data', d => { out += d.toString('utf8'); });
                             stream.stderr.on('data', d => { errOut += d.toString('utf8'); });
                             stream.on('close', (code) => {
+                                if (epoch !== sessionEpoch) return;
                                 if (code !== 0 || !out.includes('___BCC_SFTP_DEL_OK___')) {
                                     return socket.emit('sftp-delete-result', { error: errOut.trim() || `Delete failed (exit code ${code})` });
                                 }
@@ -1859,46 +1927,78 @@ io.on('connection', (socket) => {
                     });
 
                     socket.on('sftp-download', (filePath) => {
+                        if (epoch !== sessionEpoch) return;
                         const normPath = _normalizeSftpPath(filePath);
                         if (!normPath) return;
                         const readStream = sftp.createReadStream(normPath);
-                        readStream.on('data', chunk => socket.emit('sftp-download-chunk', { filePath: normPath, chunk }));
-                        readStream.on('end', () => socket.emit('sftp-download-complete', normPath));
+                        readStream.on('data', chunk => {
+                            if (epoch === sessionEpoch) socket.emit('sftp-download-chunk', { filePath: normPath, chunk });
+                        });
+                        readStream.on('end', () => {
+                            if (epoch === sessionEpoch) socket.emit('sftp-download-complete', normPath);
+                        });
                     });
                     socket.on('sftp-upload-start', ({ remotePath }) => {
+                        if (epoch !== sessionEpoch) return;
                         const normPath = _normalizeSftpPath(remotePath);
                         if (!normPath) return;
                         const writeStream = sftp.createWriteStream(normPath); activeUploads.set(normPath, writeStream);
-                        writeStream.on('close', () => { socket.emit('sftp-upload-complete', normPath); activeUploads.delete(normPath); });
+                        writeStream.on('close', () => {
+                            activeUploads.delete(normPath);
+                            if (epoch === sessionEpoch) socket.emit('sftp-upload-complete', normPath);
+                        });
                     });
                     socket.on('sftp-upload-chunk', ({ remotePath, chunk }) => {
+                        if (epoch !== sessionEpoch) return;
                         const normPath = _normalizeSftpPath(remotePath);
                         if (normPath && activeUploads.has(normPath)) activeUploads.get(normPath).write(Buffer.from(chunk));
                     });
                     socket.on('sftp-upload-end', ({ remotePath }) => {
+                        if (epoch !== sessionEpoch) return;
                         const normPath = _normalizeSftpPath(remotePath);
                         if (normPath && activeUploads.has(normPath)) activeUploads.get(normPath).end();
                     });
                 });
             }).on('keyboard-interactive', (name, instructions, instructionsLang, prompts, finish) => {
+                if (epoch !== sessionEpoch) return;
                 socket.emit('ssh-keyboard-interactive', { id: config.id, name, instructions, prompts });
                 socket.once(`ssh-keyboard-interactive-response-${config.id}`, answers => finish(answers));
-            }).on('error', (err) => socket.emit('terminal-data', '\r\n\x1b[31mConnection Error: ' + err.message + '\x1b[0m\r\n'))
-              .on('end', () => { clearInterval(statsInterval); clearInterval(dockerInterval); })
-              .on('close', () => { clearInterval(statsInterval); clearInterval(dockerInterval); })
-              .connect(connectOpts);
-        } catch (e) { socket.emit('terminal-data', '\r\n\x1b[31mConfig Error: ' + e.message + '\x1b[0m\r\n'); }
+            }).on('error', (err) => {
+                if (epoch === sessionEpoch) {
+                    socket.emit('terminal-data', '\r\n\x1b[31mConnection Error: ' + err.message + '\x1b[0m\r\n');
+                }
+            }).on('end', () => {
+                if (localStatsInterval) clearInterval(localStatsInterval);
+                if (localDockerInterval) clearInterval(localDockerInterval);
+                if (epoch === sessionEpoch) {
+                    statsInterval = null;
+                    dockerInterval = null;
+                    socket.emit('ssh-disconnected', { id: config.id });
+                }
+            }).on('close', () => {
+                if (localStatsInterval) clearInterval(localStatsInterval);
+                if (localDockerInterval) clearInterval(localDockerInterval);
+                if (epoch === sessionEpoch) {
+                    statsInterval = null;
+                    dockerInterval = null;
+                }
+            }).connect(connectOpts);
+        } catch (e) {
+            if (epoch === sessionEpoch) {
+                socket.emit('terminal-data', '\r\n\x1b[31mConfig Error: ' + e.message + '\x1b[0m\r\n');
+            }
+        }
     });
 
     socket.on('disconnect', () => {
+        sessionEpoch++;
         _closeContainerShellStream();
-        if (typeof sftpUnlockUi === 'function') sftpUnlockUi();
-        if (typeof activeDownloadToast !== 'undefined' && activeDownloadToast) { activeDownloadToast.remove(); activeDownloadToast = null; }
-        if (statsInterval) clearInterval(statsInterval); if (dockerInterval) clearInterval(dockerInterval);
-        if (sshClient) sshClient.end(); activeUploads.clear(); activePins.delete(socket.id);
+        if (statsInterval) { clearInterval(statsInterval); statsInterval = null; }
+        if (dockerInterval) { clearInterval(dockerInterval); dockerInterval = null; }
+        if (sshClient) { try { sshClient.end(); } catch (_) {} sshClient = null; }
+        activeUploads.clear();
+        activePins.delete(socket.id);
     });
-
-    // --- BOTTOM ANCHOR (KEEP AS-IS) ---
 });
 
 const PORT = process.env.PORT || 3000;
@@ -1910,6 +2010,7 @@ const _SAFE_ID_REGEX = /^[a-zA-Z0-9_.-]+$/;
 const _SAFE_IMG_REGEX = /^[a-zA-Z0-9_.:/@-]+$/;
 const _SAFE_ENV_KEY_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const _SAFE_IPV4_REGEX = /^(\d{1,3}\.){3}\d{1,3}$/;
+const _SAFE_DOCKER_USER_REGEX = /^(?:[0-9]{1,10}|[a-z_][a-z0-9_.-]{0,31})(?::(?:[0-9]{1,10}|[a-z_][a-z0-9_.-]{0,31}))?$/i;
 
 function _isValidContainerId(id) {
   return typeof id === 'string' && _SAFE_ID_REGEX.test(id.trim());
@@ -2022,6 +2123,7 @@ async function _getContainerConfig(ssh, containerId) {
     id: inspect.Id,
     name: inspect.Name.replace(/^\//, ''),
     currentImage: (inspect.Config && inspect.Config.Image) || '',
+    user: (inspect.Config && inspect.Config.User) ? String(inspect.Config.User).trim() : '',
     env,
     ports,
     binds,
@@ -2088,6 +2190,14 @@ function _buildCreateCmd(cfg, newImage) {
     args.push(`--restart ${cfg.restartPolicy}`);
   }
   if (cfg.privileged) args.push('--privileged');
+
+  if (cfg.user && typeof cfg.user === 'string' && cfg.user.trim()) {
+    const cleanUser = cfg.user.trim();
+    if (!_SAFE_DOCKER_USER_REGEX.test(cleanUser)) {
+      throw new Error('Invalid container user format. Use UID, UID:GID, or user:group (e.g. 1000:1000).');
+    }
+    args.push(`--user ${_shQuote(cleanUser)}`);
+  }
 
   (cfg.capAdd || []).forEach(c => {
     if (/^[a-zA-Z0-9_]+$/.test(c)) args.push(`--cap-add ${c}`);
@@ -2784,8 +2894,14 @@ app.post('/api/docker/containers/create-single', async (req, res) => {
     if (!_isValidContainerId(cName)) return res.status(400).json({ error: 'Invalid container name format.' });
     if (!_isValidImageTag(cImg)) return res.status(400).json({ error: 'Invalid image tag format.' });
 
+    const rawUser = req.body && req.body.user ? String(req.body.user).trim() : '';
+    if (rawUser && !_SAFE_DOCKER_USER_REGEX.test(rawUser)) {
+      return res.status(400).json({ error: 'Invalid container user format. Use UID, UID:GID, or user:group (e.g. 1000:1000).' });
+    }
+
     const cfg = {
       name: cName,
+      user: rawUser,
       restartPolicy: req.body.restartPolicy || 'unless-stopped',
       privileged: !!req.body.privileged,
       capAdd: [],
@@ -3194,8 +3310,17 @@ app.post('/api/docker/containers/:id/deploy', async (req, res) => {
       ? req.body.binds.filter(b => b && b.source && b.destination)
       : origConfig.binds;
 
+    // --- INSIDE POST /api/docker/containers/:id/deploy ---
+    const rawUser = (req.body && req.body.user !== undefined)
+      ? String(req.body.user || '').trim()
+      : (origConfig.user || '');
+    if (rawUser && !_SAFE_DOCKER_USER_REGEX.test(rawUser)) {
+      return res.status(400).json({ error: 'Invalid container user format. Use UID, UID:GID, or user:group (e.g. 1000:1000).' });
+    }
+
     const merged = {
       ...origConfig,
+      user: rawUser,
       env: safeEnv,
       ports: safePorts,
       binds: safeBinds,
@@ -3314,7 +3439,7 @@ app.get('/api/docker/recreate/stream/:depId', (req, res) => {
         if (!running || restarting || code !== 0) {
           emit('watchdog', 'failed', `Container crashed at second ${sec} (Exit Code: ${code}). Rolling back...`);
           let logs = '';
-          try { logs = await _runSshCmd(ssh, `docker logs --tail 25 ${_shQuote(cfg.name)}`); } catch (_) {}
+          try { logs = await _runSshCmd(ssh, `docker logs --tail 40 ${_shQuote(cfg.name)} 2>&1 || true`); } catch (_) {}
 
           await _runSshCmd(ssh, `docker rm -f ${_shQuote(cfg.name)}`).catch(() => {});
 
