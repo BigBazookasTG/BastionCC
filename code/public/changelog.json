@@ -1,9 +1,39 @@
 [
   {
-    "version": "v2.0.2",
+    "version": "v2.0.4",
     "date": "November 2026",
     "badge": "CURRENT RELEASE",
     "borderColor": "border-emerald-500",
+    "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+    "title": "Container --user Mapping, Server-Switch Dirty Guard & xterm.js RIS State Reset",
+    "changes": [
+      {
+        "tag": "FEATURE",
+        "text": "Docker Container User (--user) Support: Inspects, preserves, and edits container UID/GID or user:group assignments (with one-click 1000:1000, 0:0, and Default presets) across Container Edit, Single Container Deploy, and View as Compose exports."
+      },
+      {
+        "tag": "FEATURE",
+        "text": "Server-Switch Dirty-State Guard: Detects active alternate-screen TUIs (btop, nano, vim), unsaved SFTP editor changes (with Save File & Switch), active SFTP transfers, and open container shell PTYs before disconnecting the active host."
+      },
+      {
+        "tag": "BUG FIX",
+        "text": "xterm.js RIS State Reset & Toolbar Reset Button: Enforced full terminal Reset to Initial State (term.reset()) on server switches and SSH disconnects—exiting alternate screen buffers and disabling stuck SGR mouse tracking—paired with a manual Reset button in the terminal header."
+      },
+      {
+        "tag": "CORE",
+        "text": "Monotonic Session Epoch Isolation: Stamped SSH sessions and background telemetry/SFTP listeners with an incrementing sessionEpoch to prevent stale payloads from a previous host from bleeding into a newly selected server."
+      },
+      {
+        "tag": "SECURITY",
+        "text": "Container User Parameter Hardening: Added strict allowlist regex validation and POSIX single-quote encapsulation (_shQuote) for --user arguments across client and backend routes."
+      }
+    ]
+  },
+  {
+    "version": "v2.0.2",
+    "date": "November 2026",
+    "badge": "STABLE",
+    "borderColor": "border-blue-500",
     "badgeClass": "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
     "title": "Docker Volume Inspector, Threat IP Activity Drill-Down & Clean Compose Exports",
     "changes": [
