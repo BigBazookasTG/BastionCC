@@ -244,6 +244,32 @@
         <span>DEMO MODE ACTIVE (PII OBFUSCATED)</span>
     </div>
 
+    <!-- SERVER SWITCH GUARD MODAL -->
+    <div id="server-switch-modal" class="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/85 backdrop-blur-sm hidden p-4" role="dialog" aria-modal="true">
+        <div class="bg-white dark:bg-darkNav p-6 rounded-xl w-full max-w-lg shadow-2xl border border-amber-500/50 relative flex flex-col">
+            <div class="flex items-center space-x-3 mb-4 pb-3 border-b border-slate-200 dark:border-slate-800">
+                <span class="w-10 h-10 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center justify-center text-xl font-bold shrink-0">⚠️</span>
+                <div>
+                    <h3 class="text-base font-bold text-slate-900 dark:text-white">Active Session Detected</h3>
+                    <p class="text-xs text-slate-500">Confirm before disconnecting <span id="ssw-from-name" class="font-semibold text-slate-700 dark:text-slate-300">current host</span></p>
+                </div>
+            </div>
+
+            <div class="space-y-3 mb-5 text-xs text-slate-600 dark:text-slate-300">
+                <p>Switching to <strong id="ssw-to-name" class="text-accent">target server</strong> will terminate the active session and reset the terminal:</p>
+                <ul id="ssw-reasons-list" class="space-y-2 p-3 rounded-lg bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 font-mono text-[11px]"></ul>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800 flex-wrap">
+                <button type="button" onclick="closeServerSwitchModal()" class="px-4 py-2 rounded-[10px] text-xs font-bold bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition">Cancel</button>
+                <button type="button" id="btn-ssw-save-switch" onclick="saveAndConfirmServerSwitch()" class="hidden px-4 py-2 rounded-[10px] text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow">Save File &amp; Switch</button>
+                <button type="button" onclick="confirmServerSwitch()" class="px-4 py-2 rounded-[10px] text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition shadow">Switch Anyway</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- THREATS BY COUNTRY VISUAL MAP MODAL -->
+
     <!-- THREATS BY COUNTRY VISUAL MAP MODAL -->
     <div id="threat-map-modal" class="fixed inset-0 z-[87] flex items-center justify-center bg-slate-950/85 backdrop-blur-md hidden p-4">
         <div class="bg-white dark:bg-darkNav p-6 rounded-xl w-[85vw] max-w-6xl h-[85vh] shadow-2xl border border-accent/50 relative flex flex-col overflow-hidden">
@@ -538,7 +564,7 @@
             <!-- FOOTER ATTRIBUTION WITH DEDICATED VERSION SUB-LINE -->
             <div class="text-center mt-1 text-[10px] text-slate-400 font-medium tracking-wide flex flex-col space-y-0.5">
                 <span>Ideas/UI by BigBazookas, realised by Gemini AI</span>
-                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v2.0.2 Changelog</span></div>
+                <div><span onclick="openChangelog()" class="cursor-pointer hover:text-accent font-bold transition">v2.1.0 Changelog</span></div>
             </div>
         </div>
     </nav>
@@ -560,7 +586,13 @@
             </div>
             
             <div class="flex flex-col items-end space-y-2 overflow-hidden">
-                <div id="macro-buttons" class="flex space-x-2 overflow-x-auto w-full justify-end hidden"></div>
+                <div class="flex items-center space-x-2 justify-end w-full">
+                    <div id="macro-buttons" class="flex space-x-2 overflow-x-auto justify-end hidden"></div>
+                    <button type="button" id="btn-reset-terminal" onclick="resetMainTerminal()" title="Reset Terminal State (exits stuck TUI mouse mode & clears buffer)" class="hidden shrink-0 px-2.5 py-1.5 text-xs font-semibold rounded border border-slate-300 dark:border-slate-700 bg-slate-200/80 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 hover:border-orange-500/60 hover:text-orange-400 transition flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        <span>Reset</span>
+                    </button>
+                </div>
                 <div id="telemetry-bar" class="hidden text-xs font-mono text-slate-400 bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-lg px-4 py-1.5 flex space-x-6 items-center shadow-inner">
                     <span class="flex items-center space-x-1.5"><span class="text-emerald-500">●</span> <span>CPU: <span id="stat-cpu" class="text-slate-700 dark:text-slate-300 font-bold">--</span></span></span>
                     <span class="flex items-center space-x-1.5"><span class="text-blue-500">●</span> <span>RAM: <span id="stat-ram" class="text-slate-700 dark:text-slate-300 font-bold">--</span></span></span>
@@ -1525,7 +1557,21 @@
             });
 
             socket.on('servers-list', (list) => { serversData = list; renderSidebar(); updateCloneDropdowns(); });
-            socket.on('ssh-status', (data) => { document.querySelectorAll('.srv-indicator').forEach(el => { el.classList.add('hidden'); el.classList.remove('anim-connected'); }); const ind = document.getElementById('ind-' + data.id); if (ind) { ind.classList.remove('hidden'); ind.classList.add('anim-connected'); } switchTab('terminal'); term.focus(); });
+            socket.on('ssh-status', (data) => {
+                if (data.epoch && data.epoch !== clientSessionEpoch) return;
+                isSshConnecting = false;
+                document.querySelectorAll('.srv-indicator').forEach(el => { el.classList.add('hidden'); el.classList.remove('anim-connected'); });
+                const ind = document.getElementById('ind-' + data.id);
+                if (ind) { ind.classList.remove('hidden'); ind.classList.add('anim-connected'); }
+                switchTab('terminal');
+                term.focus();
+            });
+            socket.on('ssh-disconnected', (data) => {
+                if (data && data.id === activeServerId && term) {
+                    term.reset();
+                    term.writeln('\x1b[33m[SSH session ended — terminal state reset]\x1b[0m');
+                }
+            });
             
             socket.on('sftp-list-data', renderSftpGrid);
             socket.on('sftp-read-file-result', (res) => { if (window.SftpEditorModal) SftpEditorModal.onFileLoaded(res); });
@@ -2059,11 +2105,18 @@
         function switchTab(tab) {
             if (tab !== 'logs' && window.LogCleaner) LogCleaner.reset();
             const _cab = document.getElementById('container-actions-bar'); if (_cab) { _cab.classList.add('hidden'); _cab.classList.remove('flex'); }
+            const _rstBtn = document.getElementById('btn-reset-terminal'); if (_rstBtn) _rstBtn.classList.add('hidden');
             document.getElementById('view-add-server').classList.add('hidden');
             document.getElementById('macro-buttons').classList.add('hidden');
             ['terminal', 'files', 'docker', 'logs', 'security'].forEach(t => { document.getElementById('view-'+t).classList.add('hidden'); document.getElementById('view-'+t).classList.remove('flex'); document.getElementById('tab-'+t).className = "text-sm font-semibold text-slate-500 pb-1 transition-colors" + (document.getElementById('tab-'+t).classList.contains('hidden') ? ' hidden' : ''); });
             const actCls = "text-sm font-semibold text-accent border-b-2 border-accent pb-1 transition-colors";
-            if(tab === 'terminal') { document.getElementById('view-terminal').classList.remove('hidden'); document.getElementById('tab-terminal').className = actCls; document.getElementById('macro-buttons').classList.remove('hidden'); if(term) setTimeout(() => { try { fitAddon.fit(); } catch(e){} }, 50); } 
+            if(tab === 'terminal') {
+                document.getElementById('view-terminal').classList.remove('hidden');
+                document.getElementById('tab-terminal').className = actCls;
+                document.getElementById('macro-buttons').classList.remove('hidden');
+                if (_rstBtn && activeServerId) _rstBtn.classList.remove('hidden');
+                if(term) setTimeout(() => { try { fitAddon.fit(); } catch(e){} }, 50);
+            } 
             else if (tab === 'files') { document.getElementById('view-files').classList.remove('hidden'); document.getElementById('view-files').classList.add('flex'); document.getElementById('tab-files').className = actCls; socket.emit('sftp-list', currentSftpPath); } 
             else if (tab === 'docker') { document.getElementById('view-docker').classList.remove('hidden'); document.getElementById('view-docker').classList.add('flex'); document.getElementById('tab-docker').className = actCls; if (_cab) { _cab.classList.remove('hidden'); _cab.classList.add('flex'); } if (window.ScheduleRestartManager) ScheduleRestartManager.refresh(); } 
             else if (tab === 'logs') { document.getElementById('view-logs').classList.remove('hidden'); document.getElementById('view-logs').classList.add('flex'); document.getElementById('tab-logs').className = actCls; if(logTerm) setTimeout(() => { try { logFitAddon.fit(); } catch(e){} }, 50); }
@@ -2092,31 +2145,144 @@
         function cloneMacros(id) { const s = serversData.find(x => x.id === id); if (s && s.macros) s.macros.forEach(m => addMacroRow(m.label, m.cmd, m.auto)); document.getElementById('macro-clone-select').value = ''; }
         function cloneLogs(id) { const s = serversData.find(x => x.id === id); if (s && s.customLogs) s.customLogs.forEach(l => addLogPathRow(l.label, l.type || 'file', l.path)); document.getElementById('log-clone-select').value = ''; }
 
-        function connectServer(id) {
+        let clientSessionEpoch = 0;
+        let isSshConnecting = false;
+        let pendingServerSwitchId = null;
+        let pendingSaveBeforeSwitch = false;
+
+        window.resetMainTerminal = function() {
+            if (!term) return;
+            term.reset();
+            try { fitAddon.fit(); } catch (_) {}
+            term.focus();
+            showToast('Terminal state reset to initial mode');
+        };
+
+        function getDirtyServerSwitchReasons() {
+            const reasons = [];
+            if (term && term.buffer && term.buffer.active && term.buffer.active.type === 'alternate') {
+                reasons.push({ code: 'tui', label: 'Interactive TUI app active in terminal (btop / nano / vim / alternate screen)' });
+            }
+            const edModal = document.getElementById('modal-sftp-editor');
+            if (edModal && !edModal.classList.contains('hidden') && window.SftpEditorModal && SftpEditorModal.isDirty) {
+                reasons.push({ code: 'editor', label: `Unsaved file changes: ${maskDemoText(SftpEditorModal.filePath || 'remote file')}` });
+            }
+            if (sftpUploadActive || activeDownloadToast) {
+                reasons.push({ code: 'sftp', label: 'Active SFTP file transfer in progress' });
+            }
+            if (window.ContainerTerminalModal && ContainerTerminalModal.activeContainer) {
+                reasons.push({ code: 'cterm', label: `Open container shell PTY: ${maskDemoText(ContainerTerminalModal.activeContainer)}` });
+            }
+            return reasons;
+        }
+
+        function closeServerSwitchModal() {
+            pendingServerSwitchId = null;
+            pendingSaveBeforeSwitch = false;
+            const modal = document.getElementById('server-switch-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function confirmServerSwitch() {
+            const targetId = pendingServerSwitchId;
+            closeServerSwitchModal();
+            if (targetId) connectServer(targetId, true);
+        }
+
+        function saveAndConfirmServerSwitch() {
+            if (window.SftpEditorModal && SftpEditorModal.filePath) {
+                pendingSaveBeforeSwitch = true;
+                SftpEditorModal.save();
+            } else {
+                confirmServerSwitch();
+            }
+        }
+
+        function cleanupServerUiState() {
             if (window.LogCleaner) LogCleaner.reset();
             if (window.ContainerTerminalModal) ContainerTerminalModal.close(true);
-            const srv = serversData.find(s => s.id === id); activeServerId = srv.id;
-            document.getElementById('telemetry-bar').classList.add('hidden'); document.getElementById('stat-cpu').innerText = '--'; document.getElementById('stat-ram').innerText = '--';
-            document.getElementById('header-title').innerText = maskDemoText(srv.name); document.getElementById('tabs').classList.remove('hidden');
-            
-            updateNmapDropdown(srv.id);
+            if (window.SftpEditorModal) SftpEditorModal.close();
+            if (window.SftpChmodModal) SftpChmodModal.close();
+            if (window.SftpDeleteModal) SftpDeleteModal.close();
+            if (window.VolumeInspector) VolumeInspector.close();
+            if (window.PruneManager) PruneManager.close();
+            if (window.ComposeManager) ComposeManager.close();
+            if (typeof closeEditModal === 'function') closeEditModal();
+            if (typeof closeDeleteModal === 'function') closeDeleteModal();
+            if (typeof closeThreatBreakdownModal === 'function') closeThreatBreakdownModal();
+            if (typeof closeWhoisModal === 'function') closeWhoisModal();
+            if (typeof closeDefenseModal === 'function') closeDefenseModal();
+            const triage = document.getElementById('threat-triage-panel');
+            if (triage) triage.classList.add('hidden');
+            currentDockerRaw = [];
+            liveLogLines = [];
+            currentLogPartial = '';
+            currentSftpPath = '/root';
+            if (activeDownloadToast) { activeDownloadToast.remove(); activeDownloadToast = null; }
+            sftpUnlockUi();
+        }
 
-            if (srv.dockerEnabled !== false) document.getElementById('tab-docker').classList.remove('hidden'); else document.getElementById('tab-docker').classList.add('hidden');
-            if (srv.logsEnabled !== false) document.getElementById('tab-logs').classList.remove('hidden'); else document.getElementById('tab-logs').classList.add('hidden');
-            if (srv.securityEnabled !== false) document.getElementById('tab-security').classList.remove('hidden'); else document.getElementById('tab-security').classList.add('hidden');
+        function connectServer(id, force = false) {
+            const targetSrv = serversData.find(s => s.id === id);
+            if (!targetSrv) return;
+
+            if (!force && activeServerId) {
+                const reasons = getDirtyServerSwitchReasons();
+                if (reasons.length > 0) {
+                    pendingServerSwitchId = id;
+                    const curSrv = serversData.find(s => s.id === activeServerId);
+                    document.getElementById('ssw-from-name').textContent = curSrv ? maskDemoText(curSrv.name) : 'current server';
+                    document.getElementById('ssw-to-name').textContent = maskDemoText(targetSrv.name);
+                    document.getElementById('ssw-reasons-list').innerHTML = reasons.map(r => `<li class="text-amber-300">• ${escapeHtml(r.label)}</li>`).join('');
+                    const saveBtn = document.getElementById('btn-ssw-save-switch');
+                    if (saveBtn) {
+                        saveBtn.classList.toggle('hidden', !reasons.some(r => r.code === 'editor'));
+                    }
+                    document.getElementById('server-switch-modal').classList.remove('hidden');
+                    return;
+                }
+            }
+
+            const epoch = ++clientSessionEpoch;
+            isSshConnecting = true;
+            cleanupServerUiState();
+
+            activeServerId = targetSrv.id;
+            document.getElementById('telemetry-bar').classList.add('hidden');
+            document.getElementById('stat-cpu').innerText = '--';
+            document.getElementById('stat-ram').innerText = '--';
+            document.getElementById('header-title').innerText = maskDemoText(targetSrv.name);
+            document.getElementById('tabs').classList.remove('hidden');
+
+            document.querySelectorAll('.srv-indicator').forEach(el => {
+                el.classList.add('hidden');
+                el.classList.remove('anim-connected');
+            });
+
+            updateNmapDropdown(targetSrv.id);
+
+            if (targetSrv.dockerEnabled !== false) document.getElementById('tab-docker').classList.remove('hidden'); else document.getElementById('tab-docker').classList.add('hidden');
+            if (targetSrv.logsEnabled !== false) document.getElementById('tab-logs').classList.remove('hidden'); else document.getElementById('tab-logs').classList.add('hidden');
+            if (targetSrv.securityEnabled !== false) document.getElementById('tab-security').classList.remove('hidden'); else document.getElementById('tab-security').classList.add('hidden');
             
-            const lc = document.getElementById('log-buttons'); let lh = `<button data-type="systemd" data-path="syslog" class="log-trigger-btn whitespace-nowrap px-4 py-1.5 text-xs font-bold rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition">Syslog</button>`;
-            (srv.customLogs || []).forEach((l, idx) => {
+            const lc = document.getElementById('log-buttons');
+            let lh = `<button data-type="systemd" data-path="syslog" class="log-trigger-btn whitespace-nowrap px-4 py-1.5 text-xs font-bold rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition">Syslog</button>`;
+            (targetSrv.customLogs || []).forEach((l, idx) => {
                 if (l.type === 'folder') lh += `<div id="log-btn-wrap-${idx}" class="relative inline-block shrink-0"><button data-type="folder" data-path="${escapeHtml(l.path)}" class="log-trigger-btn whitespace-nowrap px-4 py-1.5 text-xs font-bold rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 flex items-center">${escapeHtml(l.label)} <svg class="w-3 h-3 ml-1 opacity-70 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></button></div>`;
                 else lh += `<button data-type="${l.type}" data-path="${escapeHtml(l.path)}" class="log-trigger-btn shrink-0 whitespace-nowrap px-4 py-1.5 text-xs font-bold rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700">${escapeHtml(l.label)}</button>`;
-            }); lc.innerHTML = lh;
+            });
+            lc.innerHTML = lh;
             lc.querySelectorAll('.log-trigger-btn').forEach(btn => btn.addEventListener('click', (e) => { if(btn.dataset.type === 'folder') scanLogFolder(btn.dataset.path, btn, e); else fetchLog(btn.dataset.type, btn.dataset.path); }));
 
-            document.getElementById('macro-buttons').innerHTML = (srv.macros || []).map(m => `<button data-cmd="${btoa(m.cmd)}" data-auto="${m.auto}" class="macro-trigger-btn whitespace-nowrap px-3 py-1.5 text-xs font-semibold rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700">${escapeHtml(m.label)}</button>`).join('');
+            document.getElementById('macro-buttons').innerHTML = (targetSrv.macros || []).map(m => `<button data-cmd="${btoa(m.cmd)}" data-auto="${m.auto}" class="macro-trigger-btn whitespace-nowrap px-3 py-1.5 text-xs font-semibold rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700">${escapeHtml(m.label)}</button>`).join('');
             document.getElementById('macro-buttons').querySelectorAll('.macro-trigger-btn').forEach(btn => btn.addEventListener('click', () => { const cmd = atob(btn.dataset.cmd); socket.emit('terminal-input', btn.dataset.auto === 'true' ? cmd + '\r' : cmd); switchTab('terminal'); term.focus(); }));
 
-            switchTab('terminal'); try { fitAddon.fit(); } catch(e) {} term.clear(); term.writeln(`Connecting to ${escapeHtml(maskDemoText(srv.host))}...\r\n`);
-            socket.emit('connect-ssh', { ...srv, cols: term.cols || 80, rows: term.rows || 24 });
+            switchTab('terminal');
+            try { fitAddon.fit(); } catch(e) {}
+            // Full RIS terminal reset exits any alternate screen & disables SGR mouse reporting
+            term.reset();
+            term.writeln(`Connecting to ${escapeHtml(maskDemoText(targetSrv.host))}...\r\n`);
+            socket.emit('connect-ssh', { ...targetSrv, cols: term.cols || 80, rows: term.rows || 24, epoch });
         }
 
         function showAddServerForm() {
@@ -2701,6 +2867,23 @@ window.executeContainerDelete = function() {
   }, 5000);
 };
 
+window.syncContainerUserPresets = function() {
+  const val = (document.getElementById('sp-user-input')?.value || '').trim();
+  document.querySelectorAll('.sp-user-chip').forEach(btn => {
+    const isMatch = (btn.dataset.userVal || '') === val;
+    btn.style.color = isMatch ? '#fb923c' : '';
+    btn.style.borderColor = isMatch ? 'rgba(249,115,22,0.55)' : '';
+    btn.style.background = isMatch ? 'rgba(249,115,22,0.12)' : '';
+  });
+};
+
+window.setContainerUserPreset = function(val) {
+  const inp = document.getElementById('sp-user-input');
+  if (inp) {
+    inp.value = val;
+    syncContainerUserPresets();
+  }
+};
 // Safe-Pull Modal Controller
 window.openEditModal = async function(containerId) {
   const cleanId = String(containerId).replace(/^\//, '').trim();
@@ -2723,6 +2906,9 @@ window.openEditModal = async function(containerId) {
     document.getElementById('sp-modal-title').textContent = 'Edit: ' + cfg.name;
     document.getElementById('sp-modal-cur-img').textContent = cfg.currentImage;
     document.getElementById('sp-image-input').value = cfg.currentImage;
+    const userInp = document.getElementById('sp-user-input');
+    if (userInp) userInp.value = cfg.user || '';
+    syncContainerUserPresets();
     // Auto-detect if active container runs beta or dev track
     const chkBeta = document.getElementById('sp-chk-beta');
     const chkDev = document.getElementById('sp-chk-dev');
@@ -2923,8 +3109,14 @@ window.submitContainerDeployment = async function() {
     mode: r.querySelector('.sp-mnt-m').value
   })).filter(m => m.source && m.destination);
 
+  const user = (document.getElementById('sp-user-input')?.value || '').trim();
+  if (user && !/^(?:[0-9]{1,10}|[a-z_][a-z0-9_.-]{0,31})(?::(?:[0-9]{1,10}|[a-z_][a-z0-9_.-]{0,31}))?$/i.test(user)) {
+    return alert('Invalid container user format. Use UID, UID:GID, or user:group (e.g. 1000:1000).');
+  }
+
   const payload = {
     newImage,
+    user,
     scanWithGrype,
     env,
     ports,
@@ -3947,6 +4139,7 @@ window.ComposeManager = {
         const image = document.getElementById('single-image').value.trim();
         const network = document.getElementById('single-network').value;
         const restartPolicy = document.getElementById('single-restart').value;
+        const user = (document.getElementById('single-user')?.value || '').trim();
 
         const ports = Array.from(document.querySelectorAll('#single-ports-list .single-port-row')).map(r => ({
           hostPort: r.querySelector('.port-h').value.trim(),
@@ -4343,6 +4536,7 @@ window.buildComposeFromEditForm = function(includeBaseEnv = false) {
   const rawName = (cfg.name || _spCurContainerId || 'app').replace(/^\//, '').trim();
   const serviceName = rawName.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'app';
   const image = (document.getElementById('sp-image-input')?.value || cfg.currentImage || '').trim();
+  const containerUser = (document.getElementById('sp-user-input')?.value || cfg.user || '').trim();
   const restartPolicy = document.getElementById('sp-restart-policy')?.value || 'no';
   const privileged = !!(document.getElementById('sp-privileged')?.checked);
 
@@ -4366,6 +4560,9 @@ window.buildComposeFromEditForm = function(includeBaseEnv = false) {
   const lines = ["version: '3.8'", 'services:', `  ${serviceName}:`];
   if (image) lines.push(`    image: ${image}`);
   lines.push(`    container_name: ${rawName}`);
+  if (containerUser) {
+    lines.push(`    user: ${_yamlEscapeScalar(containerUser)}`);
+  }
   if (restartPolicy && restartPolicy !== 'no') {
     lines.push(`    restart: ${restartPolicy}`);
   }
@@ -4787,6 +4984,7 @@ window.SftpEditorModal = {
   originalMode: null,
   lang: 'TEXT',
   isValidSyntax: true,
+  isDirty: false,
 
   detectLanguage(filePath) {
     const name = (filePath.split('/').pop() || '').toLowerCase();
@@ -4922,11 +5120,13 @@ window.SftpEditorModal = {
     pill.classList.add('hidden');
   },
 
+
   open(filename) {
     if (!socket || sftpUploadActive) return;
     const sep = currentSftpPath.endsWith('/') ? '' : '/';
     const fullPath = currentSftpPath + sep + filename;
     this.filePath = fullPath;
+    this.isDirty = false;
     this.lang = this.detectLanguage(fullPath);
 
     const modal = document.getElementById('modal-sftp-editor');
@@ -4942,7 +5142,7 @@ window.SftpEditorModal = {
       ta.value = 'Loading remote file...';
       ta.disabled = true;
     }
-    this.syncView();
+    this.syncView(false);
     if (modal) modal.classList.remove('hidden');
 
     socket.emit('sftp-read-file', { filePath: fullPath, pane: 'left' });
@@ -4956,22 +5156,27 @@ window.SftpEditorModal = {
     }
     this.filePath = res.filePath;
     this.originalMode = res.mode;
+    this.isDirty = false;
     const modeEl = document.getElementById('sftp-ed-mode');
     const ta = document.getElementById('sftp-ed-textarea');
     if (modeEl) modeEl.textContent = `chmod ${res.octal || '0644'}`;
     if (ta) {
       ta.disabled = false;
       ta.value = res.content || '';
-      this.syncView();
+      this.syncView(false);
       ta.focus();
     }
   },
 
-  syncView() {
+  syncView(markDirty = true) {
     const ta = document.getElementById('sftp-ed-textarea');
     const gutter = document.getElementById('sftp-ed-gutter');
     const highlight = document.getElementById('sftp-ed-highlight');
     if (!ta) return;
+
+    if (markDirty && !ta.disabled) {
+      this.isDirty = true;
+    }
 
     const val = ta.value || '';
     const lineCount = Math.max(1, val.split('\n').length);
@@ -5011,7 +5216,7 @@ window.SftpEditorModal = {
       const end = ta.selectionEnd;
       ta.value = ta.value.substring(0, start) + '  ' + ta.value.substring(end);
       ta.selectionStart = ta.selectionEnd = start + 2;
-      this.syncView();
+      this.syncView(true);
     }
   },
 
@@ -5039,19 +5244,34 @@ window.SftpEditorModal = {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save File'; }
 
     if (res.error) {
+      if (typeof pendingSaveBeforeSwitch !== 'undefined') pendingSaveBeforeSwitch = false;
       return showToast(`Save failed: ${res.error}`, 'error');
     }
+
+    this.isDirty = false;
     showToast(`Saved ${res.filePath.split('/').pop()} (permissions preserved)`);
+
+    if (typeof pendingSaveBeforeSwitch !== 'undefined' && pendingSaveBeforeSwitch) {
+      confirmServerSwitch();
+      return;
+    }
+
     SftpExplorer.refresh('left');
   },
 
   close() {
     this.filePath = null;
     this.originalMode = null;
+    this.isDirty = false;
     const modal = document.getElementById('modal-sftp-editor');
     if (modal) modal.classList.add('hidden');
   }
 };
+
+
+// ============================================================================
+// SFTP CHMOD PERMISSIONS INSPECTOR MODAL
+// ============================================================================
 
 // ============================================================================
 // SFTP CHMOD PERMISSIONS INSPECTOR MODAL
@@ -5669,6 +5889,19 @@ window.VolumeInspector = {
         <div id="sp-mount-list" class="sp-dynamic-list"></div>
       </div>
 
+      <div class="sp-form-section">
+        <div class="sp-title-row">
+          <label for="sp-user-input">Container User (<code style="color:#f97316; font-size:11px;">--user</code>)</label>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button type="button" class="sp-btn-xs sp-user-chip" data-user-val="1000:1000" onclick="setContainerUserPreset('1000:1000')">1000:1000</button>
+            <button type="button" class="sp-btn-xs sp-user-chip" data-user-val="0:0" onclick="setContainerUserPreset('0:0')">0:0 (root)</button>
+            <button type="button" class="sp-btn-xs sp-user-chip" data-user-val="" onclick="setContainerUserPreset('')">Default</button>
+          </div>
+        </div>
+        <input type="text" id="sp-user-input" class="sp-input-text font-mono" oninput="syncContainerUserPresets()" placeholder="e.g., 1000:1000 or node (leave blank for image default)">
+        <span class="sp-hint">Sets UID, UID:GID, or user:group on recreate. Leave blank (Default) for images using PUID/PGID env vars.</span>
+      </div>
+
       <div class="sp-grid-2">
         <div class="sp-form-group">
           <label for="sp-restart-policy">Restart Policy</label>
@@ -5686,7 +5919,6 @@ window.VolumeInspector = {
           </label>
         </div>
       </div>
-
       <div class="sp-toggle-wrapper">
         <label class="sp-toggle-label">Deployment Mode</label>
         <div class="sp-orange-toggle">
@@ -6214,6 +6446,17 @@ window.VolumeInspector = {
               <option value="no">no</option>
             </select>
           </div>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-xs font-bold text-slate-400">Container User (<code class="text-orange-400">--user</code>)</label>
+            <div class="flex gap-1.5">
+              <button type="button" onclick="document.getElementById('single-user').value='1000:1000'" class="text-[11px] px-2 py-0.5 rounded bg-slate-800 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 font-mono">1000:1000</button>
+              <button type="button" onclick="document.getElementById('single-user').value=''" class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Default</button>
+            </div>
+          </div>
+          <input type="text" id="single-user" placeholder="e.g., 1000:1000 (leave blank for image default)" class="w-full bg-[#0b0f17] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none font-mono" />
         </div>
 
         <div>
